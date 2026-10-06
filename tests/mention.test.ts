@@ -26,7 +26,7 @@ test("ranks prefix over substring over subsequence and hides dotfiles", async ()
     entry("my_reg.py"),
     entry("register.tsx"),
     entry("rxeg.md"),
-    entry(".env"),
+    entry(".hidden"),
     entry("regs", "dir"),
   ];
   expect(rankEntries(entries, "reg", false).map((e) => e.name)).toEqual([
@@ -36,10 +36,10 @@ test("ranks prefix over substring over subsequence and hides dotfiles", async ()
     "rxeg.md",
   ]);
   expect(rankEntries(entries, "", false).map((e) => e.name)).not.toContain(
-    ".env",
+    ".hidden",
   );
   expect(rankEntries(entries, ".e", false).map((e) => e.name)).toEqual([
-    ".env",
+    ".hidden",
   ]);
 });
 

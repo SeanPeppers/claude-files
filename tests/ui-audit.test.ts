@@ -231,16 +231,16 @@ test("500 entries: person ui.focus on more:below slides one row and refocuses", 
 });
 
 surfTest("dotfiles hidden, toggled, shown by '.' filter", async (s, $, on) => {
-  wire(on, { tree: { [ROOT]: [file(".env"), file("a.txt")] } });
+  wire(on, { tree: { [ROOT]: [file(".hidden"), file("a.txt")] } });
 
   const ui = await mount($, s);
   expect(await names(ui)).toEqual(["row:a.txt"]);
   await ui.press({ key: "dotfiles" });
-  expect((await names(ui)).sort()).toEqual(["row:.env", "row:a.txt"]);
+  expect((await names(ui)).sort()).toEqual(["row:.hidden", "row:a.txt"]);
   await ui.press({ key: "hide dotfiles" });
   expect(await names(ui)).toEqual(["row:a.txt"]);
   await ui.input({ key: "filter", text: ".", kind: "change" });
-  expect(await names(ui)).toContain("row:.env");
+  expect(await names(ui)).toContain("row:.hidden");
   await ui.unmount();
 });
 

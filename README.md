@@ -84,10 +84,27 @@ they are treated as untrusted:
   break the pane, color your terminal or disguise itself.
 - **No disguised links.** Symlinks are marked `→`, and picking one inserts the
   path it really leads to: a `docs/setup.md` that points at
-  `~/.ssh/id_ed25519` shows up as exactly that. Dangling links, devices and
+  `~/private/diary.md` shows up as exactly that. Dangling links, devices and
   pipes are refused.
 
 Found a problem? Please open an issue.
+
+## What the hooks do
+
+The plugin is one mod (`hooks/register.tsx`) with four hooks. None of them
+changes what Claude or its tools do; they only add the pane.
+
+| Hook | What it does |
+|---|---|
+| `session.start` | registers the `/files` command |
+| `command.run` (`/files`) | opens the Files pane with an empty filter |
+| `ui.render` (the Files pane) | lists the current folder and draws the pane |
+| `ui.focus` (the Files pane) | when the arrows reach a `↑/↓ N more` row, slides the list one row and keeps the focus on the next file |
+
+Engine calls it makes: `$.fs.list` and `$.fs.stat` (folder listings and file
+types, never contents), `$.prompt.fill` (insert the mention), `$.session.cwd`,
+`$.ui.*` (pane, focus, toasts) and `$.state` (the pane's own session state:
+folder, filter, scroll position).
 
 ## Platforms
 
