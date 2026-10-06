@@ -178,3 +178,9 @@ test("hostile names draw, refuse to mention, and links mention their target", as
     await ui.unmount();
   }
 });
+
+test("a leading // is POSIX, not a Windows share", async () => {
+  expect(isRoot("//mnt/nfs")).toBe(false);
+  expect(parentOf("//mnt/nfs")).toBe("/mnt");
+  expect(resolveTyped("/home/u", "//mnt/nfs/x")).toBe("/mnt/nfs/x");
+});

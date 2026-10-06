@@ -16,7 +16,8 @@ const sepOf = (path: string) => (path.includes("\\") ? "\\" : "/");
 
 // The root a path starts from: `/`, `C:\`, `\\host\share\`, or "" when relative.
 export const rootOf = (path: string) => {
-  const unc = /^[\\/]{2}[^\\/]+[\\/][^\\/]+[\\/]?/.exec(path);
+  // Only `\\host\share` is a share: POSIX reads a leading `//` as `/`.
+  const unc = /^\\\\[^\\/]+[\\/][^\\/]+[\\/]?/.exec(path);
   if (unc)
     return unc[0].endsWith("\\") || unc[0].endsWith("/")
       ? unc[0]
