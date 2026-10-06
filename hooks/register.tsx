@@ -126,7 +126,7 @@ async function pick($: EngineInterface, path: string) {
 }
 
 // Folders open; regular files go into the prompt. A link is mentioned by
-// where it leads, so a link disguised as a project file (say, to ~/.ssh)
+// where it leads, so a link disguised as a project file (say, to a private file outside the project)
 // shows its real target in the prompt before anything is sent.
 async function openPath($: EngineInterface, path: string) {
   const stat = await $.fs.stat(path, { resolve: true }).catch(() => undefined);
