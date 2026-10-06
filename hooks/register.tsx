@@ -2,7 +2,10 @@ import { atom, read, update } from "claude-code";
 import type { EngineInterface, Register } from "claude-code";
 
 import {
+  baseName,
+  displayName,
   humanSize,
+  isRoot,
   isPathQuery,
   joinPath,
   mentionFor,
@@ -73,8 +76,7 @@ async function focusFirst(
 async function goTo($: EngineInterface, path: string) {
   const from = await currentDir($);
   if (path === from) return;
-  const child =
-    parentOf(from) === path ? from.slice(from.lastIndexOf("/") + 1) : undefined;
+  const child = parentOf(from) === path ? baseName(from) : undefined;
   const { ranked } = await rankedIn($, path, "");
   const childIndex = child
     ? ranked.findIndex((entry) => entry.name === child)
@@ -87,7 +89,7 @@ async function goTo($: EngineInterface, path: string) {
   );
   await focusFirst($, [
     childIndex >= 0 && child && rowKey(child),
-    path !== "/" && PARENT_KEY,
+    !isRoot(path) && PARENT_KEY,
     "filter",
   ]);
 }
@@ -109,21 +111,33 @@ async function slide($: EngineInterface, by: 1 | -1) {
 
 async function pick($: EngineInterface, path: string) {
   const mention = mentionFor(path, await $.session.cwd());
+  if (!mention)
+    return $.ui.toast(
+      `Not added: ${displayName(baseName(path))} has a quote or control character, which could inject text into the prompt`,
+    );
   const filled = await $.prompt
     .fill({ text: mention, mode: "insert" })
     .catch(() => ({ isFilled: false }));
   $.ui.toast(
     filled.isFilled
       ? `Added ${mention.trim()}`
-      : `Could not add ${path} to the prompt`,
+      : `Could not add ${displayName(path)} to the prompt`,
   );
 }
 
-// Folders open; files (and links to files) go into the prompt.
+// Folders open; regular files go into the prompt. A link is mentioned by
+// where it leads, so a link disguised as a project file (say, to ~/.ssh)
+// shows its real target in the prompt before anything is sent.
 async function openPath($: EngineInterface, path: string) {
   const stat = await $.fs.stat(path, { resolve: true }).catch(() => undefined);
-  if (!stat) return $.ui.toast(`No such path: ${path}`);
-  return stat.kind === "dir" ? goTo($, path) : pick($, path);
+  if (!stat || stat.kind === "other")
+    return $.ui.toast(
+      stat
+        ? `Not a regular file: ${displayName(path)}`
+        : `No such path: ${displayName(path)}`,
+    );
+  if (stat.kind === "dir") return goTo($, path);
+  return pick($, stat.isLink && stat.realPath ? stat.realPath : path);
 }
 
 export const register: Register = (on) => {
@@ -137,6 +151,8 @@ export const register: Register = (on) => {
   });
 
   on("command.run", { command: "files" }, async ($) => {
+    // The filter box opens empty, so the list must too.
+    await update($, queryAtom, () => "");
     await $.ui.open({
       id: PANE,
       title: "Files",
@@ -153,9 +169,9 @@ export const register: Register = (on) => {
     )
       return next(e);
     // Keep the ring where it is; slide() moves it once the new rows are drawn.
-    void slide($, e.element === MORE_BELOW ? 1 : -1);
+    void slide($, e.element === MORE_BELOW ? 1 : -1).catch(() => undefined);
     return {};
-  });
+  }).catch(($, e, next) => next(e));
 
   on("ui.render", { component: "Pane", requestId: PANE }, async ($, e) => {
     const ui = $.ui.resolve(e);
@@ -173,7 +189,7 @@ export const register: Register = (on) => {
       return (
         <Box flexDirection="column" gap={1}>
           <Text color="error">
-            Cannot list {dir}: {String(err)}
+            Cannot list {displayName(dir)}: {displayName(String(err))}
           </Text>
           <Button autoFocus onPress={() => goTo($, cwd)}>
             Back to working directory
@@ -192,19 +208,22 @@ export const register: Register = (on) => {
     const shown = ranked.slice(offset, offset + listRows);
     const below = ranked.length - offset - shown.length;
     const top = ranked[0];
-    const shownDir =
-      dir === cwd
-        ? "."
-        : dir.startsWith(`${cwd}/`)
-          ? `./${dir.slice(cwd.length + 1)}`
-          : dir;
+    const underCwd = dir.startsWith(cwd) && /[\\/]/.test(dir[cwd.length] ?? "");
+    const shownDir = displayName(
+      dir === cwd ? "." : underCwd ? `./${dir.slice(cwd.length + 1)}` : dir,
+    );
     const page = (by: number) =>
       update($, offsetAtom, () =>
-        windowAround(offset + by, offset, listRows, ranked.length),
+        Math.min(
+          Math.max(0, offset + by),
+          Math.max(0, ranked.length - listRows),
+        ),
       );
 
     // Enter in the filter: a typed path jumps, otherwise the best match opens.
+    // The box clears itself on Enter, so the query clears with it.
     const submit = async (typed: string) => {
+      await update($, queryAtom, () => "");
       if (pathMode) return openPath($, resolveTyped(dir, typed.trim()));
       if (top) return openPath($, joinPath(dir, top.name));
     };
@@ -234,12 +253,21 @@ export const register: Register = (on) => {
               submitLabel={
                 pathMode ? "go" : top?.kind === "dir" ? "open" : "add"
               }
-              onInput={(value: string) => void filter(value)}
-              onSubmit={(value: string) => void submit(value)}
+              onInput={(value: string) =>
+                void filter(value).catch(() => undefined)
+              }
+              onSubmit={(value: string) =>
+                void submit(value).catch(() => undefined)
+              }
             />
           </Box>
         )}
-        {dir !== "/" && !query && (
+        {pathMode && (
+          <Text
+            dimColor
+          >{`Enter: go to ${displayName(resolveTyped(dir, query.trim()))}`}</Text>
+        )}
+        {!isRoot(dir) && !query && (
           <Button
             key={PARENT_KEY}
             plain
@@ -279,7 +307,7 @@ export const register: Register = (on) => {
                 dimColor={!isDir}
                 onPress={() => openPath($, joinPath(dir, entry.name))}
               >
-                {`${entry.name}${isDir ? "/" : ""}`}
+                {`${displayName(entry.name)}${isDir ? "/" : ""}${entry.isLink ? " →" : ""}`}
               </Button>
               {entry.kind === "file" && (
                 <Text dimColor>{humanSize(entry.size)}</Text>

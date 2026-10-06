@@ -1,5 +1,7 @@
 import { expect, test } from "claude-code/testing";
 
+import { posix } from "./posix";
+
 const ROOT = "/home/u/code";
 const file = (name: string, size = 10) =>
   ({ name, kind: "file", size, mtimeMs: 0, isLink: false }) as const;
@@ -21,10 +23,12 @@ const PANE_PROPS = {
 test("filter, open folders, go back up, and add files to the prompt", async ($, on) => {
   const filled: string[] = [];
   on("session.cwd", () => ({ value: ROOT }));
-  on("fs.list", (_, e) => ({ value: [...(TREE[e.path ?? ROOT] ?? [])] }));
+  on("fs.list", (_, e) => ({
+    value: [...(TREE[posix(e.path) ?? ROOT] ?? [])],
+  }));
   on("fs.stat", (_, e) => ({
     value: {
-      kind: e.path in TREE ? "dir" : "file",
+      kind: (posix(e.path) ?? "") in TREE ? "dir" : "file",
       size: 1,
       mtimeMs: 0,
       isLink: false,

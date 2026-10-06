@@ -1,17 +1,19 @@
 {
   "name": "file-picker",
-  "version": "0.1.0",
-  "description": "Browse files in a pane and click one to @-mention it in the prompt",
-  "types": "./types/index.d.ts",
+  "displayName": "Claude Files",
+  "version": "0.2.0",
+  "description": "A file browser pane: walk folders with the arrow keys, Enter puts @path in your prompt",
   "author": {
     "name": "SeanPeppers"
   },
-  "license": "MIT",
+  "homepage": "https://github.com/SeanPeppers/claude-files",
   "repository": "https://github.com/SeanPeppers/claude-files",
+  "license": "MIT",
   "keywords": [
     "mod",
     "files",
     "picker",
     "pane"
-  ]
+  ],
+  "types": "./types/index.d.ts"
 }
