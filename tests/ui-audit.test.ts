@@ -1,5 +1,7 @@
 import { expect, test } from "claude-code/testing";
 
+import { posix } from "./posix";
+
 const ROOT = "/home/u/code";
 type Ent = {
   name: string;
@@ -63,12 +65,13 @@ function wire(on: any, w: World) {
   };
   on("session.cwd", () => ({ value: w.cwd ?? ROOT }));
   on("fs.list", (_: any, e: any) => {
-    const v = w.tree[e.path];
+    const v = w.tree[posix(e.path) ?? ROOT];
     if (v === "EACCES") throw new Error("EACCES: permission denied");
     if (!v) throw new Error("ENOENT");
     return { value: [...v] };
   });
-  on("fs.stat", (_: any, e: any) => {
+  on("fs.stat", (_: any, raw: any) => {
+    const e = { ...raw, path: posix(raw.path) ?? "" };
     const dirOf = e.path.replace(/\/[^/]+$/, "") || "/";
     const listed = w.tree[dirOf];
     const isListed =

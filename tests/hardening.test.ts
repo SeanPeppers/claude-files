@@ -1,5 +1,7 @@
 import { expect, test } from "claude-code/testing";
 
+import { posix } from "./posix";
+
 import {
   displayName,
   humanSize,
@@ -132,7 +134,7 @@ test("hostile names draw, refuse to mention, and links mention their target", as
   on("fs.list", () => ({ value: [...LISTING] }));
   on("fs.stat", (_, e) => ({
     value:
-      e.path === "/p/setup.md"
+      posix(e.path) === "/p/setup.md"
         ? {
             kind: "file",
             size: 1,
