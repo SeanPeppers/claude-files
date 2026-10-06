@@ -1,0 +1,15 @@
+{
+  "name": "claude-files",
+  "owner": {
+    "name": "SeanPeppers"
+  },
+  "plugins": [
+    {
+      "name": "file-picker",
+      "source": "./"
+    }
+  ],
+  "metadata": {
+    "description": "A file browser pane for Claude Code: pick a file, get @path in your prompt"
+  }
+}
