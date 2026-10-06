@@ -1,7 +1,6 @@
 {
   "name": "file-picker",
   "displayName": "Claude Files",
-  "icon": "./.claude-plugin/icon.png",
   "version": "0.2.1",
   "description": "A file browser pane: walk folders with the arrow keys, Enter puts @path in your prompt",
   "author": {
