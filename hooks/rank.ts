@@ -21,7 +21,7 @@ export const rootOf = (path: string) => {
   if (unc)
     return unc[0].endsWith("\\") || unc[0].endsWith("/")
       ? unc[0]
-      : unc[0] + "\\";
+      : `${unc[0]}\\`;
   const drive = /^[A-Za-z]:(?:[\\/]|$)/.exec(path);
   if (drive) return `${path.slice(0, 2)}${path[2] ?? "\\"}`;
   return path.startsWith("/") ? "/" : "";
@@ -68,7 +68,9 @@ export const displayName = (name: string) =>
 // `@"..."` has no escape for `"`, and control characters could carry extra
 // lines or mentions into the prompt. Paths under the working directory are
 // relative; separators are always `/`, which every platform's paths accept.
-export const mentionFor = (path: string, cwd: string) => {
+export type LineRange = { start: number; end: number };
+
+export const mentionFor = (path: string, cwd: string, range?: LineRange) => {
   if (path.includes('"') || CONTROL.test(path)) return undefined;
   const prefix = SEP.test(cwd.slice(-1)) ? cwd : cwd + sepOf(cwd);
   const rel =
@@ -76,7 +78,15 @@ export const mentionFor = (path: string, cwd: string) => {
       ? path.slice(prefix.length)
       : path;
   const slashed = rel.replace(/\\/g, "/");
-  return /[\s@#'`]/.test(slashed) ? `@"${slashed}" ` : `@${slashed} `;
+  // A range must sit inside the quotes: `@"a b.md"#L3-4` attaches the whole file.
+  const fragment = !range
+    ? ""
+    : range.start === range.end
+      ? `#L${range.start}`
+      : `#L${range.start}-${range.end}`;
+  return /[\s@#'`]/.test(slashed)
+    ? `@"${slashed}${fragment}" `
+    : `@${slashed}${fragment} `;
 };
 
 // Lower is better; undefined means no match. Prefix beats substring beats
@@ -163,4 +173,50 @@ export const windowAround = (
   const shown =
     index < offset ? index : index >= offset + rows ? index - rows + 1 : offset;
   return Math.min(Math.max(0, shown), maxOffset);
+};
+
+// Names that usually hold secrets. Checked on the whole path so a file inside
+// ~/.ssh or ~/.aws counts too; templates such as .env.example do not.
+const SECRET_NAMES = [
+  /^\.env(\..+)?$/i,
+  /\.(pem|key|p12|pfx|jks|keystore|kdbx|gpg|asc)$/i,
+  /^id_(rsa|dsa|ecdsa|ed25519)$/i,
+  /^(\.netrc|\.npmrc|\.pypirc|\.git-credentials|\.htpasswd|kaggle\.json)$/i,
+  /^(credentials|secrets?|tokens?|service[-_]?account[^/\\]*)(\.(json|ya?ml|toml|ini|env|txt))?$/i,
+];
+const SECRET_DIRS = /(^|[\\/])\.(ssh|aws|gnupg|kube|docker)[\\/]/i;
+const TEMPLATE = /\.(example|sample|template|dist)$/i;
+
+export const isSecretPath = (path: string) => {
+  const name = baseName(path);
+  if (TEMPLATE.test(name)) return false;
+  return SECRET_DIRS.test(path) || SECRET_NAMES.some((re) => re.test(name));
+};
+
+// One preview row: tabs as two spaces, unsafe characters as �, cut to width.
+export const previewLine = (text: string, width: number) => {
+  const flat = displayName(text.replace(/\t/g, "  ").replace(/\r$/, ""));
+  return flat.length > width
+    ? `${flat.slice(0, Math.max(0, width - 1))}…`
+    : flat;
+};
+
+// A file the preview won't draw: NUL bytes mean binary.
+export const isBinaryText = (text: string) => text.includes("\u0000");
+
+// The first line after `from` (wrapping round) whose text contains `query`,
+// as a 0-based index, or -1.
+export const findLine = (
+  lines: readonly string[],
+  query: string,
+  from: number,
+) => {
+  const needle = query.normalize("NFC").toLowerCase();
+  if (!needle) return -1;
+  for (let step = 1; step <= lines.length; step++) {
+    const i = (from + step) % lines.length;
+    if ((lines[i] ?? "").normalize("NFC").toLowerCase().includes(needle))
+      return i;
+  }
+  return -1;
 };

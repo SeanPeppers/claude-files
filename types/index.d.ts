@@ -6,6 +6,11 @@ declare module "claude-code" {
       showHidden: boolean;
       query: string;
       offset: number;
+      preview: string;
+      lineOffset: number;
+      anchor: number;
+      confirm: string;
+      confirmAction: string;
     };
   }
 }

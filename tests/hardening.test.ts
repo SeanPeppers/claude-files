@@ -1,7 +1,4 @@
 import { expect, test } from "claude-code/testing";
-
-import { posix } from "./posix";
-
 import {
   displayName,
   humanSize,
@@ -13,6 +10,7 @@ import {
   rankEntries,
   resolveTyped,
 } from "../hooks/rank";
+import { posix } from "./posix";
 
 test("names that could inject into the prompt are refused, not mentioned", async () => {
   const cwd = "/p";

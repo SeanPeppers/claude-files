@@ -1,8 +1,8 @@
 {
   "name": "file-picker",
   "displayName": "Claude Files",
-  "version": "0.2.1",
-  "description": "A file browser pane: walk folders with the arrow keys, Enter puts @path in your prompt",
+  "version": "0.3.0",
+  "description": "A file browser pane: Enter puts @path in your prompt, l picks exact lines (@file#L12-30)",
   "author": {
     "name": "SeanPeppers"
   },
