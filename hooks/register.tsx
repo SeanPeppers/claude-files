@@ -360,11 +360,10 @@ async function clearConfirm($: EngineInterface) {
 async function cancelConfirm($: EngineInterface) {
   const path = await read($, confirmAtom);
   await clearConfirm($);
-  await focusFirst($, [
-    path && rowKey(baseName(path)),
-    path && hitKey(path),
-    "filter",
-  ]);
+  // In search the ring goes back to the box, so typing goes on refining the
+  // search instead of reaching the main prompt.
+  if (await read($, searchAtom)) return focusFirst($, ["filter"]);
+  await focusFirst($, [path && rowKey(baseName(path)), "filter"]);
 }
 
 // Folders open; regular files go into the prompt. A path that goes through a
@@ -969,6 +968,10 @@ export const register: Register = (on) => {
     listRows = Math.max(3, e.props.scroll.bodyRows - LIST_CHROME_ROWS);
     const pathMode = isPathQuery(query);
     const ranked = pathMode ? [] : rankEntries(listed, query, showHidden);
+    // Hidden entries aren't shown, so they aren't counted either.
+    const shownCount = showHidden
+      ? listed.length
+      : listed.filter((entry) => !entry.name.startsWith(".")).length;
     const offset = Math.min(
       await read($, offsetAtom),
       Math.max(0, ranked.length - listRows),
@@ -1003,7 +1006,7 @@ export const register: Register = (on) => {
             {relative(dir)}
           </Text>
           <Text dimColor>
-            {query ? `${ranked.length}/${listed.length}` : `${listed.length}`}
+            {query ? `${ranked.length}/${shownCount}` : `${shownCount}`}
           </Text>
         </Box>
         {Input && (

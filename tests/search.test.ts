@@ -1,7 +1,12 @@
 import { expect, test } from "claude-code/testing";
 
 import type { Entry, Hit } from "../hooks/rank";
-import { fitCellsStart, rankHits, walkProject } from "../hooks/rank";
+import {
+  fitCellsStart,
+  rankEntries,
+  rankHits,
+  walkProject,
+} from "../hooks/rank";
 import { posix } from "./posix";
 
 const file = (name: string): Entry => ({ name, kind: "file", size: 1 });
@@ -289,4 +294,16 @@ test("search says when it stopped at the depth cap", async ($, on) => {
   );
   expect(await ui.find({ text: /first 20,000/ })).toBeUndefined();
   await ui.unmount();
+});
+
+test("among equal matches the shorter name ranks first", async () => {
+  const e = (name: string) => ({ name, kind: "file" as const, size: 0 });
+  expect(
+    rankEntries([e("button.test.tsx"), e("Button.tsx")], "button", false).map(
+      (x) => x.name,
+    ),
+  ).toEqual(["Button.tsx", "button.test.tsx"]);
+  expect(
+    rankEntries([e("b.ts"), e("a-long.ts")], "", false).map((x) => x.name),
+  ).toEqual(["a-long.ts", "b.ts"]);
 });
