@@ -181,6 +181,15 @@ async function goTo($: EngineInterface, path: string) {
   ]);
 }
 
+// Puts the ring on line `n` and records it for the range highlight directly:
+// the focus event a slide raises arrives before the new rows are drawn, so the
+// hook can miss it and the highlight would lag a row or more behind.
+async function focusLine($: EngineInterface, n: number) {
+  focusedKey = lineKey(n);
+  await update($, focusLineAtom, () => n);
+  await focusFirst($, [lineKey(n)]);
+}
+
 // Arrowing onto a "more" row moves the window one row and puts the ring on
 // the row that came into view, so the arrows keep walking.
 async function slide($: EngineInterface, by: 1 | -1) {
@@ -198,7 +207,7 @@ async function slide($: EngineInterface, by: 1 | -1) {
     await update($, lineOffsetAtom, () =>
       windowAround(index, offset, lineRows, total),
     );
-    return focusFirst($, [lineKey(index + 1)]);
+    return focusLine($, index + 1);
   }
   const dir = await currentDir($);
   const ranked = await rankedIn($, dir, await read($, queryAtom));
@@ -355,7 +364,7 @@ async function findInLines($: EngineInterface, query: string) {
   await update($, lineOffsetAtom, () =>
     windowAround(index, offset, lineRows, previewLines?.lines.length ?? 0),
   );
-  await focusFirst($, [lineKey(index + 1)]);
+  await focusLine($, index + 1);
 }
 
 async function linesOfFocused($: EngineInterface) {
