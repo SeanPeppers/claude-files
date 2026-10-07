@@ -37,3 +37,22 @@ jobs:
           persist-credentials: false
       - name: Biome (lint + format)
         run: npx --yes @biomejs/biome@2.5.15 ci .
+
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Claude Code
+        # Pinned; a global CLI has no lockfile to install from.
+        run: npm install -g @anthropic-ai/claude-code@2.1.291 # zizmor: ignore[adhoc-packages]
+      - name: Generate the plugin API types
+        # Loading the plugin writes .claude-plugin/types and tsconfig.json,
+        # even though the run itself stops for lack of a login.
+        run: |
+          claude --plugin-dir . -p "x" --max-turns 1 || true
+          test -f .claude-plugin/types/claude-code/index.d.ts
+      - name: tsc
+        run: npx --yes -p typescript@5.9.3 tsc -p .

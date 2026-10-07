@@ -200,10 +200,14 @@ Edits reload while that session runs. Before sending a change:
 claude plugin validate --strict .
 claude plugin test .
 npx --yes @biomejs/biome@2.5.15 check --write .
+npx --yes -p typescript@5.9.3 tsc -p .
 ```
 
-CI runs validation and tests on Linux, macOS and Windows, Biome for lint and
-format, and [zizmor](https://github.com/zizmorcore/zizmor) on the workflows;
+The type check uses the plugin API types Claude Code writes into the folder
+(git-ignored) when it loads it with `--plugin-dir`, so run that once first.
+
+CI runs validation and tests on Linux, macOS and Windows, a type check, Biome
+for lint and format, and [zizmor](https://github.com/zizmorcore/zizmor) on the workflows;
 Dependabot keeps the pinned actions current.
 
 | File | What |
