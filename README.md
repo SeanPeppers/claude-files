@@ -146,6 +146,12 @@ pane or press `ctrl+x` then `Tab` to return.
 
 The folder is listed when you open it; reopen `/files` to see files added since.
 
+**Pane size.** The pane needs about 40 columns and 10 rows. In a narrow or short
+pane (such as the band under the transcript in a terminal under ~110 columns)
+it switches to a compact layout, and below that size the arrow keys may scroll
+the pane instead of moving between rows: widen the terminal or drag the pane
+edge to give it room.
+
 ## Safety
 
 What the plugin does: it lists folders (project search lists every folder under
@@ -200,7 +206,7 @@ changes what Claude or its tools do; they only add the pane.
 | Hook | What it does |
 |---|---|
 | `session.start` | registers the `/files` command |
-| `command.run` (`/files`) | opens the Files pane with an empty filter |
+| `command.run` (`/files` only) | opens the Files pane with an empty filter. It is matched to the `/files` command, so it never sees or changes any other command |
 | `ui.render` (the Files pane) | draws the folder list, the project search, the line view or the secrets confirmation |
 | `ui.focus` (the Files pane) | remembers the highlighted row for `l` and `m`, and when the arrows reach a `↑/↓ N more` row, slides the list one row |
 
