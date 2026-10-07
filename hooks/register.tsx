@@ -16,6 +16,8 @@ import {
   mentionFor,
   parentOf,
   previewLine,
+  rangeLabel,
+  rangeOf,
   rankEntries,
   relativeTo,
   resolveTyped,
@@ -54,6 +56,11 @@ const lineOffsetAtom = atom(
 );
 // The first line of a range being picked, or 0.
 const anchorAtom = atom({ plugin: "file-picker", key: "anchor" } as const, 0);
+// The line the ring is on, or 0: state, so the range redraws as it moves.
+const focusLineAtom = atom(
+  { plugin: "file-picker", key: "focusLine" } as const,
+  0,
+);
 // A secrets-looking file waiting for a second yes, and what to do with it.
 const confirmAtom = atom(
   { plugin: "file-picker", key: "confirm" } as const,
@@ -331,10 +338,7 @@ async function pressLine($: EngineInterface, n: number) {
     return $.ui.toast(`Range starts at line ${n}: Enter on the last line`);
   }
   await update($, anchorAtom, () => 0);
-  return pick($, path, {
-    start: Math.min(anchor, n),
-    end: Math.max(anchor, n),
-  });
+  return pick($, path, rangeOf(anchor, n));
 }
 
 async function findInLines($: EngineInterface, query: string) {
@@ -399,7 +403,13 @@ export const register: Register = (on) => {
       return {};
     }
     const result = await next(e);
-    if (!("deny" in result)) focusedKey = e.element ?? "";
+    if (!("deny" in result)) {
+      focusedKey = e.element ?? "";
+      const line = focusedKey.startsWith("line:")
+        ? Number(focusedKey.slice(5))
+        : 0;
+      await update($, focusLineAtom, () => line);
+    }
     return result;
   }).catch((_$, e, next) => next(e));
 
@@ -461,6 +471,9 @@ export const register: Register = (on) => {
       lineRows = Math.max(3, e.props.scroll.bodyRows - LINES_CHROME_ROWS);
       const lines = previewLines.lines;
       const anchor = await read($, anchorAtom);
+      const focusLine = await read($, focusLineAtom);
+      const range =
+        anchor && focusLine ? rangeOf(anchor, focusLine) : undefined;
       const offset = Math.min(
         await read($, lineOffsetAtom),
         Math.max(0, lines.length - lineRows),
@@ -486,10 +499,16 @@ export const register: Register = (on) => {
               dimColor
             >{`${lines.length} ${lines.length === 1 ? "line" : "lines"}`}</Text>
           </Box>
-          <Text dimColor={!anchor} color={anchor ? "suggestion" : undefined}>
-            {anchor
-              ? `From line ${anchor}: Enter on the last line of the range`
-              : "Enter on the first line of the range"}
+          <Text
+            dimColor={!anchor}
+            color={anchor ? "suggestion" : undefined}
+            wrap="truncate-end"
+          >
+            {range
+              ? `${rangeLabel(range)}: Enter to add, x to clear`
+              : anchor
+                ? `From line ${anchor}: Enter on the last line of the range`
+                : "Enter on the first line of the range"}
           </Text>
           {Input && (
             <Box borderStyle="round" borderColor="promptBorder" paddingX={1}>
@@ -521,15 +540,18 @@ export const register: Register = (on) => {
           {shown.map((text, i) => {
             const n = offset + i + 1;
             const isAnchor = n === anchor;
+            const inRange = range && n >= range.start && n <= range.end;
+            // The marker takes the separator's one cell, so a row stays one row.
+            const mark = isAnchor ? "▸" : inRange ? "┃" : "│";
             return (
               <Button
                 key={lineKey(n)}
                 plain
                 variant={isAnchor ? "primary" : undefined}
-                dimColor={!isAnchor}
+                dimColor={!isAnchor && !inRange}
                 onPress={() => pressLine($, n)}
               >
-                {`${String(n).padStart(gutter)} │ ${previewLine(text, width)}`}
+                {`${String(n).padStart(gutter)} ${mark} ${previewLine(text, width)}`}
               </Button>
             );
           })}

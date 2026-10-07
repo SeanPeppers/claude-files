@@ -74,6 +74,17 @@ export const displayName = (name: string) =>
 // relative; separators are always `/`, which every platform's paths accept.
 export type LineRange = { start: number; end: number };
 
+// The lines from `a` to `b`, in either order.
+export const rangeOf = (a: number, b: number): LineRange => ({
+  start: Math.min(a, b),
+  end: Math.max(a, b),
+});
+
+export const rangeLabel = ({ start, end }: LineRange) =>
+  start === end
+    ? `Line ${start}`
+    : `Lines ${start}–${end} (${end - start + 1} lines)`;
+
 export const mentionFor = (path: string, cwd: string, range?: LineRange) => {
   // A name holding `#L5` would itself be read as a line range.
   if (path.includes('"') || CONTROL.test(path) || /#L\d/i.test(path))

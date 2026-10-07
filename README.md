@@ -104,6 +104,7 @@ To update later: `claude plugin update file-picker@claude-files`.
 |---|---|
 | `↑` `↓` | move through the lines; long files slide as you go |
 | `Enter` on a line | first press marks the start, second the end: `@file#L12-30` goes in. Enter twice on one line gives `#L12` |
+| `↑` `↓` after a start | the lines from the start (`▸`) to the one you're on are highlighted (`┃`), and the status line reads `Lines 12–30 (19 lines): Enter to add, x to clear` |
 | find box | type text and press Enter to jump to the next line containing it |
 | `w` | put the whole file in instead |
 | `x` | clear the start you marked |
