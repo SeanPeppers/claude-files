@@ -126,7 +126,7 @@ for (const surface of SURFACES) {
     await ui.press({ key: "insert" });
     expect(log.filled).toEqual(["@a.ts "]);
     expect(log.toasts.at(-1)).toMatch(
-      /Added 1 file\. Skipped \.env \(needs a yes/,
+      /Added 1 file\. Skipped \.env \(looks like a secrets file/,
     );
     expect(log.toasts.at(-1)).toMatch(/x"y\.md \(name can't be mentioned/);
     expect(await ui.find({ key: "confirm:yes" })).toBeUndefined();
@@ -150,4 +150,61 @@ test("toggleMark adds in order and removes", async () => {
   expect(toggleMark([], "/p/a")).toEqual(["/p/a"]);
   expect(toggleMark(["/p/a"], "/p/b")).toEqual(["/p/a", "/p/b"]);
   expect(toggleMark(["/p/a", "/p/b"], "/p/a")).toEqual(["/p/b"]);
+});
+
+test("m marks the row the focus slid onto, not the one left behind", async ($, on) => {
+  const many = Array.from(
+    { length: 41 },
+    (_, i) => `f${String(i).padStart(2, "0")}.ts`,
+  );
+  const filled: string[] = [];
+  on("session.cwd", () => ({ value: "/p" }));
+  on("fs.list", () => ({
+    value: many.map((name) => ({
+      name,
+      kind: "file",
+      size: 1,
+      mtimeMs: 0,
+      isLink: false,
+    })),
+  }));
+  on("fs.stat", () => ({
+    value: { kind: "file", size: 1, mtimeMs: 0, isLink: false },
+  }));
+  on("ui.focus", () => ({}));
+  on("ui.toast", () => ({ value: undefined }));
+  on("prompt.fill", (_, e) => {
+    filled.push(e.text);
+    return { isFilled: true };
+  });
+  const ui = await $.ui.mount({
+    plugin: "file-picker",
+    surface: "terminal",
+    component: "Pane",
+    requestId: "file-picker",
+    props: {
+      title: "Files",
+      isFocused: true,
+      bodyColumns: 80,
+      placement: "dock",
+      scroll: { offset: 0, bodyRows: 25 },
+      view: {},
+    },
+  });
+  await $.ui.focus({
+    component: "Pane",
+    requestId: "file-picker",
+    plugin: "file-picker",
+    element: "more:below",
+    origin: { kind: "person" },
+  });
+  let slid = false;
+  for (let i = 0; i < 50 && !slid; i++)
+    slid = (await ui.find({ key: "row:f00.ts" })) === undefined;
+  expect(slid).toBe(true);
+  await ui.press({ key: "mark" });
+  await ui.press({ key: "insert" });
+  expect(filled).toHaveLength(1);
+  expect(filled[0]).not.toContain("f00.ts");
+  await ui.unmount();
 });

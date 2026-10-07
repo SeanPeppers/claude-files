@@ -227,6 +227,9 @@ async function slide($: EngineInterface, by: 1 | -1) {
   await update($, offsetAtom, () =>
     windowAround(ranked.indexOf(target), offset, listRows, ranked.length),
   );
+  // Recorded here too: the focus event a slide raises can arrive before the
+  // new rows draw, and m or l would then act on the row left behind.
+  focusedKey = rowKey(target.name);
   await focusFirst($, [rowKey(target.name)]);
 }
 
@@ -419,7 +422,11 @@ async function insertMarked($: EngineInterface) {
       continue;
     }
     if (needsConfirm(path, file)) {
-      skipped.push(`${name} (needs a yes: press Enter on it)`);
+      const why =
+        isSecretPath(path) || isSecretPath(file.real)
+          ? "looks like a secrets file"
+          : "a link that leads out of the project";
+      skipped.push(`${name} (${why}: press Enter on it to confirm)`);
       continue;
     }
     const mention = mentionFor(file.mentionPath, cwd);
@@ -643,7 +650,7 @@ export const register: Register = (on) => {
               {`↓ ${below} more`}
             </Button>
           )}
-          <Box flexDirection="row" gap={2} marginTop={1}>
+          <Box flexDirection="row" flexWrap="wrap" columnGap={2} marginTop={1}>
             <Button plain hotkey="f" dimColor onPress={() => closeLines($)}>
               files
             </Button>
@@ -816,7 +823,7 @@ export const register: Register = (on) => {
             {`↓ ${below} more`}
           </Button>
         )}
-        <Box flexDirection="row" gap={2} marginTop={1}>
+        <Box flexDirection="row" flexWrap="wrap" columnGap={2} marginTop={1}>
           <Button
             key="lines"
             plain
@@ -824,7 +831,7 @@ export const register: Register = (on) => {
             dimColor
             onPress={() => linesOfFocused($)}
           >
-            view & pick lines
+            lines
           </Button>
           <Button
             plain
@@ -853,13 +860,19 @@ export const register: Register = (on) => {
               return update($, hiddenAtom, (v) => !v);
             }}
           >
-            {showHidden ? "hide hidden files" : "hidden files"}
+            {showHidden ? "hide hidden" : "hidden"}
           </Button>
-          <Button plain hotkey="a" dimColor onPress={() => pick($, dir)}>
-            @ this folder
+          <Button
+            key="here"
+            plain
+            hotkey="a"
+            dimColor
+            onPress={() => pick($, dir)}
+          >
+            @ folder
           </Button>
         </Box>
-        <Box flexDirection="row" gap={2}>
+        <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
           <Button
             key="mark"
             plain
@@ -867,7 +880,7 @@ export const register: Register = (on) => {
             dimColor
             onPress={() => markFocused($)}
           >
-            mark file
+            mark
           </Button>
           {marked.length > 0 && (
             <Button
