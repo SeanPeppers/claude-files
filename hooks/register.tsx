@@ -26,6 +26,7 @@ import {
   toggleMark,
   WALK_MAX_DEPTH,
   WALK_MAX_FILES,
+  WALK_MAX_FOLDERS,
   walkProject,
   windowAround,
   wrappedRows,
@@ -149,7 +150,10 @@ async function walkCwd($: EngineInterface) {
   const current: { walk?: Walk } = {};
   project = current;
   focusedKey = "";
-  const walk = await walkProject(root, (dir) => $.fs.list(dir), showHidden);
+  // A walk superseded by a later one (f, h, reopening) stops listing.
+  const walk = await walkProject(root, (dir) => $.fs.list(dir), showHidden, {
+    aborted: () => project !== current,
+  });
   if (project !== current) return;
   current.walk = walk;
   await update($, walkedAtom, (n) => n + 1);
@@ -817,6 +821,8 @@ export const register: Register = (on) => {
         );
       const caps = [
         walk?.capped && `first ${WALK_MAX_FILES.toLocaleString("en-US")} files`,
+        walk?.foldersCapped &&
+          `first ${WALK_MAX_FOLDERS.toLocaleString("en-US")} folders`,
         walk?.deep && `folders over ${WALK_MAX_DEPTH} levels deep skipped`,
       ].filter(Boolean);
       return (
