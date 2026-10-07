@@ -28,6 +28,7 @@ import {
   WALK_MAX_FILES,
   walkProject,
   windowAround,
+  wrappedRows,
 } from "./rank";
 
 const PANE = "file-picker";
@@ -35,7 +36,7 @@ const PARENT_KEY = "row:..";
 const MORE_ABOVE = "more:above";
 const MORE_BELOW = "more:below";
 // List: header, filter box (3), '..', the two "more" rows, footer with its
-// margin, the marks row, hint. Lines: header, status, find box (3), the two
+// margin, the marks row, hint; footers that wrap take more (wrappedRows). Lines: header, status, find box (3), the two
 // "more" rows, footer with its margin, hint.
 const LIST_CHROME_ROWS = 11;
 const LINES_CHROME_ROWS = 10;
@@ -764,6 +765,11 @@ export const register: Register = (on) => {
     const query = await read($, queryAtom);
     const marked = await read($, markedAtom);
     const markedSet = new Set(marked);
+    const hiddenLabel = showHidden ? "hide hidden" : "hidden";
+    const markLabels = [
+      "m: mark",
+      ...(marked.length > 0 ? [`i: insert ${marked.length} marked`] : []),
+    ];
     const hiddenButton = (
       <Button
         key="hidden"
@@ -778,14 +784,21 @@ export const register: Register = (on) => {
           if (await read($, searchAtom)) await walkCwd($);
         }}
       >
-        {showHidden ? "hide hidden" : "hidden"}
+        {hiddenLabel}
       </Button>
     );
 
     if (await read($, searchAtom)) {
       // Read so the pane redraws when the walk lands.
       await read($, walkedAtom);
-      listRows = Math.max(3, e.props.scroll.bodyRows - LIST_CHROME_ROWS);
+      const footerRows = wrappedRows(
+        ["l: lines", "f: folders", `h: ${hiddenLabel}`, ...markLabels],
+        e.props.bodyColumns,
+      );
+      listRows = Math.max(
+        3,
+        e.props.scroll.bodyRows - LIST_CHROME_ROWS - (footerRows - 1),
+      );
       const walk = project?.walk;
       const hits = walk ? rankedHits(walk, query, showHidden) : [];
       const offset = Math.min(
@@ -898,7 +911,7 @@ export const register: Register = (on) => {
               {`↓ ${below} more`}
             </Button>
           )}
-          <Box flexDirection="row" gap={2} marginTop={1}>
+          <Box flexDirection="row" flexWrap="wrap" columnGap={2} marginTop={1}>
             <Button
               key="lines"
               plain
@@ -965,7 +978,24 @@ export const register: Register = (on) => {
       );
     }
 
-    listRows = Math.max(3, e.props.scroll.bodyRows - LIST_CHROME_ROWS);
+    // The chrome counts one row for each footer; a narrow pane wraps them.
+    const footerRows =
+      wrappedRows(
+        [
+          "l: lines",
+          "s: search project",
+          "u: up",
+          ...(prevDir && prevDir !== dir ? ["b: back"] : []),
+          "c: cwd",
+          `h: ${hiddenLabel}`,
+          "a: @ folder",
+        ],
+        e.props.bodyColumns,
+      ) + wrappedRows(markLabels, e.props.bodyColumns);
+    listRows = Math.max(
+      3,
+      e.props.scroll.bodyRows - LIST_CHROME_ROWS - (footerRows - 2),
+    );
     const pathMode = isPathQuery(query);
     const ranked = pathMode ? [] : rankEntries(listed, query, showHidden);
     // Hidden entries aren't shown, so they aren't counted either.

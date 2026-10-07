@@ -299,6 +299,34 @@ export const fitCells = (text: string, width: number) => {
   return out;
 };
 
+// Terminal cells `text` takes.
+const cellWidth = (text: string) => {
+  let cells = 0;
+  for (const ch of text) cells += cellsOf(ch.codePointAt(0) ?? 0);
+  return cells;
+};
+
+// Rows a wrapping row of plain hotkey Buttons takes at `width` cells: each
+// draws as `<hotkey>: <label>`, `gap` cells from the next. A footer that wraps
+// makes the pane taller than its body, and then the arrows scroll the pane.
+export const wrappedRows = (
+  labels: readonly string[],
+  width: number,
+  gap = 2,
+) => {
+  let rows = 0;
+  let used = 0;
+  for (const label of labels) {
+    const cells = Math.min(cellWidth(label), width);
+    if (rows > 0 && used + gap + cells <= width) used += gap + cells;
+    else {
+      rows++;
+      used = cells;
+    }
+  }
+  return rows;
+};
+
 // One preview row: tabs as two spaces, unsafe characters as �, cut to width.
 export const previewLine = (text: string, width: number) =>
   fitCells(displayName(text.replace(/\t/g, "  ").replace(/\r$/, "")), width);
