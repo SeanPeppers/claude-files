@@ -81,6 +81,20 @@ mod API it uses.
 
 To update later: `claude plugin update file-picker@claude-files`.
 
+## Examples
+
+- **Point at a file.** Type `/files`, filter to `auth`, press Enter on
+  `src/auth/session.ts`, then ask "why does this log users out after an hour?"
+  The prompt gets `@src/auth/session.ts` instead of a description of where the
+  code lives.
+- **Hand over exact lines.** Press `l` on a long file, press Enter on line 120
+  and again on line 145, then ask "simplify this loop". The prompt gets
+  `@src/report.py#L120-145`, so Claude reads those 26 lines rather than the
+  whole file.
+- **Gather files from across the project.** Press `s` to search the whole
+  project, press `m` on `api.ts`, `api.test.ts` and `docs/api.md`, then `i`,
+  and ask "make the docs match the code". All three mentions go in at once.
+
 ## Use
 
 **Folders**
@@ -210,12 +224,16 @@ changes what Claude or its tools do; they only add the pane.
 | `ui.render` (the Files pane) | draws the folder list, the project search, the line view or the secrets confirmation |
 | `ui.focus` (the Files pane) | remembers the highlighted row for `l` and `m`, and when the arrows reach a `↑/↓ N more` row, slides the list one row |
 
-Engine calls it makes: `$.fs.list` and `$.fs.stat` (folder listings and file
-types; project search is `$.fs.list` alone, one folder per call),
+Engine calls it makes: `$.command.register` (the `/files` command),
+`$.fs.list` and `$.fs.stat` (folder listings and file types; project search is `$.fs.list` alone, one folder per call),
 `$.fs.read` (only the file you press `l` on, up to 4 MiB),
 `$.prompt.fill` (insert the mention), `$.session.cwd`, `$.ui.*` (pane, focus,
 toasts) and `$.state` (the pane's own session state: folder, filter, scroll
-position, search mode, the open file, the range start and the marked files).
+position, search mode, the open file, the range start and the marked files). It
+reads no environment variables, tokens or Claude Code settings, and it makes
+no network requests: `claude plugin validate` shows no `env reads:` line and no
+network calls. The list of secrets file names under [Safety](#safety) is used
+only to ask before such a file goes into the prompt.
 
 ## Platforms
 
