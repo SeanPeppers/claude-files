@@ -481,7 +481,8 @@ export const walkProject = async (
 };
 
 // Ranks found files by their name first; a query that only matches the path
-// (`comp/btn`) ranks after every name match. Ties go to the closer path match.
+// (`comp/btn`) ranks after every name match. Ties go to the shorter name,
+// then the closer path match; with no query the list is alphabetical by path.
 export const rankHits = (
   hits: readonly Hit[],
   query: string,
@@ -507,7 +508,7 @@ export const rankHits = (
     .sort(
       (a, b) =>
         a.score - b.score ||
-        a.hit.name.length - b.hit.name.length ||
+        (query ? a.hit.name.length - b.hit.name.length : 0) ||
         a.path - b.path ||
         NAME_ORDER.compare(a.hit.rel, b.hit.rel),
     )
