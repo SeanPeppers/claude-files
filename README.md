@@ -4,28 +4,66 @@
 ![platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-informational)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
-**A file browser for Claude Code.** Type `/files`, walk your project with the
-arrow keys, press Enter, and `@path/to/the/file` lands in your prompt. No more
-typing long paths or guessing what `@` autocomplete will find.
+**Point Claude at exactly the code you mean.** Type `/files`, walk your project
+with the arrow keys, and press Enter to drop `@path/to/file` into your prompt,
+or press `l` and pick just the lines you care about: `@src/app.ts#L40-72`.
 
 ```
- ./src                                                     2
-╭──────────────────────────────────────────────────────────╮
-│ type to filter, ../ or /path to jump                     │
-╰──────────────────────────────────────────────────────────╯
- ../
- components/
- app.ts                                                 5.3K
+ ./src/app.ts                                           80 lines
+ From line 40: Enter on the last line of the range
+╭──────────────────────────────────────────────────────────────╮
+│ find text, Enter jumps to the next match                     │
+╰──────────────────────────────────────────────────────────────╯
+ ↑ 37 more
+ 40 │ export function handleRequest(req: Request) {
+ 41 │   const user = await authenticate(req);
+ 42 │   if (!user) return unauthorized();
+ ↓ 36 more
 
- u: up  b: back  c: cwd  h: dotfiles  a: @ this folder
- ↑↓ move · Enter add/open · Esc close
+ f: files  w: whole file  x: clear start
 
-❯ @src/app.ts
+❯ @src/app.ts#L40-72
 ```
 
-It runs in the Claude Code terminal and in the desktop app's Code tab, on
-Linux, macOS and Windows. It is a community plugin, not affiliated with
-Anthropic.
+A community plugin for the Claude Code terminal and the desktop app's Code tab,
+on Linux, macOS and Windows. Not affiliated with Anthropic.
+
+## Why use it
+
+When you describe code in words ("the part that retries failed downloads"),
+Claude has to search for it first: extra turns, extra tokens, extra waiting.
+Pointing at the file or the exact lines skips the search.
+
+We measured it: the same questions, each with one checkable answer, asked four
+ways, on Claude Sonnet in Claude Code 2.1.291 with read-only tools. Numbers are
+the mean per question with a 95% confidence interval over paired questions.
+
+**30 questions across two real ~18k-line Python projects** (240 runs):
+
+| You point Claude at the code by… | Tokens | Cost | Turns | Time |
+|---|---|---|---|---|
+| describing it in words | 61k | $0.048 | 3.1 | 5.1 s |
+| naming the file (`in loader.py`) | 46k (−24% ± 11%) | −17% | 2.4 | 4.1 s |
+| `@` the whole file (Enter) | 32k (−48% ± 12%) | no significant change | 1.2 | 2.4 s |
+| `@` the exact lines (`l`) | **20k (−68% ± 11%)** | **−46% ± 9%** | 1.0 | 1.8 s |
+
+Accuracy was the same in every way of asking (60/60 correct each), so the gain
+is speed and cost, not correctness, at least for questions this specific.
+
+A second run on the open-source [click](https://github.com/pallets/click) library
+(12 questions, 108 runs) agreed: exact lines saved 52% ± 3% of tokens and
+45% ± 13% of cost against a description.
+
+Two honest caveats:
+
+- **Whole files can backfire on very large files.** On a 3,136-line file, the
+  whole-file mention cost 3.4× the tokens of a description, because the file
+  doesn't fit in one read and Claude reads it again in parts. Line ranges were
+  the cheapest option on every file we tried, large ones included. That's what
+  `l` is for.
+- Part of every run is Claude Code's fixed setup (about 14k tokens here), so in
+  absolute terms the saving is roughly 17k–41k tokens per question pointed at.
+  The percentage shrinks in a long session; the absolute saving doesn't.
 
 ## Install
 
@@ -36,24 +74,39 @@ In a Claude Code terminal session:
 ```
 
 Answer `y` to add the marketplace and pick a scope (user scope loads it in
-every session). Then type `/files`.
+every session). Then type `/files`. Tested on Claude Code 2.1.291; update
+Claude Code if `/files` doesn't appear, since older versions lack parts of the
+mod API it uses.
 
 To update later: `claude plugin update file-picker@claude-files`.
 
 ## Use
+
+**Folders**
 
 | Key | Does |
 |---|---|
 | type | filter the folder: prefix matches first, then substring, then fuzzy |
 | `↑` `↓` | move between the filter box and the rows; long folders slide as you go |
 | `Enter` on a file | put `@path` in the prompt at the cursor |
-| `Enter` on a folder | open it |
-| `Enter` on `../` | go up a folder |
+| `l` on a file | open it line by line to pick a range |
+| `Enter` on a folder / `../` | open it / go up |
 | `Enter` in the filter | open the best match, or jump to a typed path (`../notes`, `/etc`, `D:\data`) |
 | `u` `b` `c` | up a folder, back to the last folder, back to the working directory |
 | `h` | show or hide dotfiles |
 | `a` | put the current folder in the prompt |
 | `Esc` | close the pane |
+
+**Lines** (after `l`)
+
+| Key | Does |
+|---|---|
+| `↑` `↓` | move through the lines; long files slide as you go |
+| `Enter` on a line | first press marks the start, second the end: `@file#L12-30` goes in. Enter twice on one line gives `#L12` |
+| find box | type text and press Enter to jump to the next line containing it |
+| `w` | put the whole file in instead |
+| `x` | clear the start you marked |
+| `f` | back to the folder |
 
 **In and out in one key.** Open a folder and the focus sits on `../`, so Enter
 takes you back out. Go up and the focus sits on the folder you just left, so
@@ -61,7 +114,9 @@ Enter takes you back in.
 
 **Paths.** Files under the working directory go in relative (`@src/app.ts`),
 anything else absolute. Names with spaces, `@`, `#` or `'` are wrapped in
-`@"..."`. Separators are always `/`, which Windows accepts too.
+`@"..."`, with the line range inside the quotes (`@"my notes.md#L2-3"`):
+outside the quotes Claude Code would attach the whole file. Separators are
+always `/`, which Windows accepts too.
 
 **Focus.** The letter keys work while the pane has the keyboard. After a file
 is added the keyboard goes back to the prompt so you can keep typing; click the
@@ -69,25 +124,35 @@ pane or press `ctrl+x` then `Tab` to return.
 
 ## Safety
 
-The plugin only lists folders and inserts text into your prompt. It never reads
-file contents, writes files, runs commands or touches the network, and nothing
-is sent until you press Enter on the prompt yourself.
+What the plugin does: it lists folders, reads a file **only when you press `l`
+on it** (to draw its lines in the pane), and inserts text into your prompt. It
+never writes files, runs commands or touches the network, never reads your
+Claude Code settings, and nothing is sent until you press Enter on the prompt
+yourself.
 
-Filenames come from whatever you browse, including repos you just cloned, so
-they are treated as untrusted:
+**Secrets files need a second yes.** For `.env` files, private keys (`*.pem`,
+`*.key`, `id_rsa`, `id_ed25519`, ...), credential files (`credentials`,
+`.netrc`, `.npmrc`, `kaggle.json`, `secrets.*`, service-account JSON) and
+anything inside `.ssh`, `.aws`, `.gnupg`, `.kube` or `.docker`, the pane asks
+before adding the file (its contents would go to Claude) or showing its lines
+(they'd be on your screen). Templates like `.env.example` aren't flagged.
+
+Filenames and file contents come from whatever you browse, including repos you
+just cloned, so they're treated as untrusted:
 
 - **No prompt injection through names.** A name with a `"` or a control
   character (newline, tab, escape codes, bidi overrides) could close the quotes
-  and slip a second `@file` or extra instructions into your prompt, so it is
+  and slip a second `@file` or extra instructions into your prompt, so it's
   never inserted. You get a toast instead.
-- **No terminal tricks.** Those characters are drawn as `�`, so a name can't
-  break the pane, color your terminal or disguise itself.
+- **No terminal tricks.** Those characters are drawn as `�`, in names and in
+  file lines alike, so nothing can break the pane, color your terminal or
+  disguise itself.
 - **No disguised links.** Symlinks are marked `→`, and picking one inserts the
   path it really leads to: a `docs/setup.md` that points at
   `~/private/diary.md` shows up as exactly that. Dangling links, devices and
   pipes are refused.
 
-Found a problem? Please open an issue.
+Found a problem? See [SECURITY.md](SECURITY.md).
 
 ## What the hooks do
 
@@ -98,13 +163,14 @@ changes what Claude or its tools do; they only add the pane.
 |---|---|
 | `session.start` | registers the `/files` command |
 | `command.run` (`/files`) | opens the Files pane with an empty filter |
-| `ui.render` (the Files pane) | lists the current folder and draws the pane |
-| `ui.focus` (the Files pane) | when the arrows reach a `↑/↓ N more` row, slides the list one row and keeps the focus on the next file |
+| `ui.render` (the Files pane) | draws the folder list, the line view or the secrets confirmation |
+| `ui.focus` (the Files pane) | remembers the highlighted row for `l`, and when the arrows reach a `↑/↓ N more` row, slides the list one row |
 
 Engine calls it makes: `$.fs.list` and `$.fs.stat` (folder listings and file
-types, never contents), `$.prompt.fill` (insert the mention), `$.session.cwd`,
-`$.ui.*` (pane, focus, toasts) and `$.state` (the pane's own session state:
-folder, filter, scroll position).
+types), `$.fs.read` (only the file you press `l` on, up to 4 MiB),
+`$.prompt.fill` (insert the mention), `$.session.cwd`, `$.ui.*` (pane, focus,
+toasts) and `$.state` (the pane's own session state: folder, filter, scroll
+position, the open file and the range start).
 
 ## Platforms
 
@@ -124,21 +190,26 @@ claude --plugin-dir ./claude-files
 Edits reload while that session runs. Before sending a change:
 
 ```
-claude plugin validate .
+claude plugin validate --strict .
 claude plugin test .
+npx --yes @biomejs/biome@2.5.15 check --write .
 ```
+
+CI runs validation and tests on Linux, macOS and Windows, Biome for lint and
+format, and [zizmor](https://github.com/zizmorcore/zizmor) on the workflows;
+Dependabot keeps the pinned actions current.
 
 | File | What |
 |---|---|
-| `hooks/register.tsx` | `/files`, the pane, focus handling, picking |
-| `hooks/rank.ts` | pure helpers: ranking, paths, mentions, the list window |
+| `hooks/register.tsx` | `/files`, the pane, the line view, focus handling, picking |
+| `hooks/rank.ts` | pure helpers: ranking, paths, mentions, secrets check, the list window |
 | `types/index.d.ts` | the session state the pane keeps |
-| `tests/` | unit, hardening (hostile names, Windows paths) and UI tests |
+| `tests/` | unit, hardening (hostile names, Windows paths), line view and UI tests |
 
 One design note, since it isn't obvious: a pane whose content is taller than
 the pane takes the arrow keys to scroll, which stops them moving between rows.
-So the list is drawn a window at a time, with `↑ N more` / `↓ N more` rows that
-slide it when the focus reaches them.
+So lists and files are drawn a window at a time, with `↑ N more` / `↓ N more`
+rows that slide them when the focus reaches them.
 
 ## License
 
