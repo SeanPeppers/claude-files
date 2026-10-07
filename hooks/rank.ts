@@ -200,7 +200,7 @@ const SECRET_NAMES = [
   /^(secrets?|token)(\.(json|ya?ml|toml|ini|env|txt))?$/i,
   /^service[-_]?account[^/\\]*\.json$/i,
   /^(\.vault-token|\.s3cfg|\.my\.cnf|rclone\.conf|msal_token_cache\.json)$/i,
-  /^\.(bash|zsh|sh|fish|python|node_repl|psql|mysql)_?history$/i,
+  /^\.?(bash|zsh|sh|fish|python|node_repl|psql|mysql)_?history$/i,
 ];
 const SECRET_DIRS = /(^|[\\/])\.(ssh|aws|gnupg|kube|docker)[\\/]/i;
 const SECRET_PATHS =

@@ -125,7 +125,10 @@ async function resolveFile($: EngineInterface, path: string) {
         : inProject
           ? joinPath(cwd, relativeTo(real, realCwd))
           : real,
-    escapes: real !== path && isInside(path, cwd) && !inProject,
+    escapes:
+      real !== path &&
+      (isInside(path, cwd) || isInside(path, realCwd)) &&
+      !inProject,
   };
 }
 
@@ -233,7 +236,12 @@ async function confirmFirst(
 ) {
   const risky = isSecretPath(row) || isSecretPath(file.real) || file.escapes;
   if (!risky || approved.has(file.real)) return false;
-  if ((await read($, confirmAtom)) === row) {
+  // The yes approves only the file the screen named: a link retargeted in
+  // between shows the confirm again, with the new target.
+  if (
+    (await read($, confirmAtom)) === row &&
+    confirmTarget?.real === file.real
+  ) {
     approved.add(file.real);
     return false;
   }
