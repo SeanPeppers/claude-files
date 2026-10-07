@@ -21,7 +21,8 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Claude Code
-        run: npm install -g @anthropic-ai/claude-code
+        # Pinned; a global CLI has no lockfile to install from.
+        run: npm install -g @anthropic-ai/claude-code@2.1.291 # zizmor: ignore[adhoc-packages]
       - name: Validate
         run: claude plugin validate --strict .
       - name: Test
