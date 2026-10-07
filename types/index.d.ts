@@ -12,6 +12,7 @@ declare module "claude-code" {
       focusLine: number;
       confirm: string;
       confirmAction: string;
+      marked: string[];
     };
   }
 }

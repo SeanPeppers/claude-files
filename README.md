@@ -96,6 +96,8 @@ To update later: `claude plugin update file-picker@claude-files`.
 | `u` `b` `c` | up a folder, back to the last folder, back to the working directory |
 | `h` | show or hide hidden files: names starting with `.`, like `.env`, `.github` or `.gitignore` |
 | `a` | put the current folder in the prompt |
+| `m` on a file | mark or unmark it (`✓`); marks stay as you move between folders. Folders can't be marked (use `a`) |
+| `i` | insert every marked file at once (`@src/a.ts @"my notes.md" @docs/b.md`) and clear the marks |
 | `Esc` | close the pane |
 
 **Lines** (after `l`)
@@ -142,7 +144,10 @@ the GitHub CLI's `hosts.yml`) and anything inside `.ssh`, `.aws`, `.gnupg`,
 `.kube` or `.docker`, the pane asks before adding the file (its contents would
 go to Claude) or showing its lines (they'd be on your screen, and lines you pick
 go to Claude). Say yes once and that file isn't asked about again this session.
-Templates like `.env.example` and public keys (`.pub`) aren't flagged. The check
+Marked files get the same checks, but `i` never asks: a marked file that
+would need a yes (or whose name can't be mentioned safely) is left out, the
+rest go in, and a toast names what was skipped and why. Press Enter on it to
+say yes, then mark it again. Templates like `.env.example` and public keys (`.pub`) aren't flagged. The check
 looks at where a path really leads, not just its name, so an innocently named
 link (or a file inside a linked folder) that ends up at a secret is caught too.
 
@@ -177,13 +182,13 @@ changes what Claude or its tools do; they only add the pane.
 | `session.start` | registers the `/files` command |
 | `command.run` (`/files`) | opens the Files pane with an empty filter |
 | `ui.render` (the Files pane) | draws the folder list, the line view or the secrets confirmation |
-| `ui.focus` (the Files pane) | remembers the highlighted row for `l`, and when the arrows reach a `↑/↓ N more` row, slides the list one row |
+| `ui.focus` (the Files pane) | remembers the highlighted row for `l` and `m`, and when the arrows reach a `↑/↓ N more` row, slides the list one row |
 
 Engine calls it makes: `$.fs.list` and `$.fs.stat` (folder listings and file
 types), `$.fs.read` (only the file you press `l` on, up to 4 MiB),
 `$.prompt.fill` (insert the mention), `$.session.cwd`, `$.ui.*` (pane, focus,
 toasts) and `$.state` (the pane's own session state: folder, filter, scroll
-position, the open file and the range start).
+position, the open file, the range start and the marked files).
 
 ## Platforms
 

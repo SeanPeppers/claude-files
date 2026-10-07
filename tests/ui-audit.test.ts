@@ -180,12 +180,12 @@ surfTest(
 
     const ui = await mount($, s, 25);
     const rows = await names(ui);
-    expect(rows.length).toBe(15);
+    expect(rows.length).toBe(14);
     expect(await ui.find({ key: "more:below" })).toBeDefined();
     expect(await ui.find({ key: "more:above" })).toBeUndefined();
     await ui.press({ key: "more:below" });
     const after = await names(ui);
-    expect(after[0]).toBe("row:f015");
+    expect(after[0]).toBe("row:f014");
     expect(await ui.find({ key: "more:above" })).toBeDefined();
     await ui.press({ key: "more:above" });
     expect((await names(ui))[0]).toBe("row:f000");
