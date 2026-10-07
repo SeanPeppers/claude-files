@@ -158,7 +158,8 @@ just cloned, so they're treated as untrusted:
   `~/private/diary.md` shows up as exactly that. Dangling links, devices and
   pipes are refused.
 
-Found a problem? Please open an issue.
+Found a security problem? Please report it privately, as [SECURITY.md](SECURITY.md)
+describes; for anything else, open an issue.
 
 ## What the hooks do
 
