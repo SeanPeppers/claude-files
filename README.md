@@ -98,7 +98,24 @@ To update later: `claude plugin update file-picker@claude-files`.
 | `a` | put the current folder in the prompt |
 | `m` on a file | mark or unmark it (`✓`); marks stay as you move between folders. Folders can't be marked (use `a`) |
 | `i` | insert every marked file at once (`@src/a.ts @"my notes.md" @docs/b.md`) and clear the marks |
+| `s` | search the whole project (see below) |
 | `Esc` | close the pane |
+
+**Project search** (after `s`)
+
+| Key | Does |
+|---|---|
+| type | match file names anywhere under the working directory, shown as relative paths (`src/components/Button.tsx`); a name match ranks first, the path breaks ties, and `comp/btn` matches the path |
+| `Enter` / `l` / `m` | add the file, pick its lines or mark it, exactly as in a folder |
+| `h` | include hidden folders and files (walks the project again) |
+| `f` | back to the folder list |
+
+The project is walked once when you press `s`, one folder listing at a time,
+then every keystroke filters that list. It skips `.git`, `node_modules`,
+`.venv`, `venv`, `__pycache__`, `dist`, `build`, `target`, `.next` and hidden
+folders (unless hidden files are shown), never follows linked folders, and
+stops at 12 folder levels or 20,000 files; the pane says when it stopped
+early. Press `s` again from the folder list to see files added since.
 
 **Lines** (after `l`)
 
@@ -130,8 +147,10 @@ The folder is listed when you open it; reopen `/files` to see files added since.
 
 ## Safety
 
-What the plugin does: it lists folders, reads a file **only when you press `l`
-on it** (to draw its lines in the pane), and inserts text into your prompt. It
+What the plugin does: it lists folders (project search lists every folder under
+the working directory, within the limits above, and never opens a file), reads
+a file **only when you press `l` on it** (to draw its lines in the pane), and
+inserts text into your prompt. It
 never writes files, runs commands or touches the network, never reads your
 Claude Code settings, and nothing is sent until you press Enter on the prompt
 yourself.
@@ -181,14 +200,15 @@ changes what Claude or its tools do; they only add the pane.
 |---|---|
 | `session.start` | registers the `/files` command |
 | `command.run` (`/files`) | opens the Files pane with an empty filter |
-| `ui.render` (the Files pane) | draws the folder list, the line view or the secrets confirmation |
+| `ui.render` (the Files pane) | draws the folder list, the project search, the line view or the secrets confirmation |
 | `ui.focus` (the Files pane) | remembers the highlighted row for `l` and `m`, and when the arrows reach a `↑/↓ N more` row, slides the list one row |
 
 Engine calls it makes: `$.fs.list` and `$.fs.stat` (folder listings and file
-types), `$.fs.read` (only the file you press `l` on, up to 4 MiB),
+types; project search is `$.fs.list` alone, one folder per call),
+`$.fs.read` (only the file you press `l` on, up to 4 MiB),
 `$.prompt.fill` (insert the mention), `$.session.cwd`, `$.ui.*` (pane, focus,
 toasts) and `$.state` (the pane's own session state: folder, filter, scroll
-position, the open file, the range start and the marked files).
+position, search mode, the open file, the range start and the marked files).
 
 ## Platforms
 
@@ -224,9 +244,9 @@ Dependabot keeps the pinned actions current.
 | File | What |
 |---|---|
 | `hooks/register.tsx` | `/files`, the pane, the line view, focus handling, picking |
-| `hooks/rank.ts` | pure helpers: ranking, paths, mentions, secrets check, the list window |
+| `hooks/rank.ts` | pure helpers: ranking, the project walk, paths, mentions, secrets check, the list window |
 | `types/index.d.ts` | the session state the pane keeps |
-| `tests/` | unit, hardening (hostile names, Windows paths), line view and UI tests |
+| `tests/` | unit, hardening (hostile names, Windows paths), line view, project search and UI tests |
 
 One design note, since it isn't obvious: a pane whose content is taller than
 the pane takes the arrow keys to scroll, which stops them moving between rows.
