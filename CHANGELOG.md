@@ -4,6 +4,14 @@ All notable changes to this plugin are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the plugin
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-10-07
+
+### Fixed
+
+- A local variable in the Lines view shared its name with the `focusLine`
+  helper, which the plugin directory's validator read as `$` passed to
+  something other than a function. No change in behaviour.
+
 ## [0.4.1] - 2026-10-07
 
 ### Fixed
@@ -112,6 +120,7 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Windows and macOS support (drive and UNC paths, NFD names) and CI on all
   three.
 
+[0.4.2]: https://github.com/SeanPeppers/claude-files/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/SeanPeppers/claude-files/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/SeanPeppers/claude-files/compare/291b6ff...v0.4.0
 [0.3.2]: https://github.com/SeanPeppers/claude-files/compare/df3bdd3...291b6ff
