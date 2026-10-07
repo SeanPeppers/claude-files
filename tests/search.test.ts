@@ -194,12 +194,21 @@ const TREE: Record<string, Entry[]> = {
   "/p/elsewhere": [file("outside.ts")],
 };
 
-function wire(on: any, tree: Record<string, Entry[]>) {
-  const log = { filled: [] as string[], listed: [] as string[] };
+// `gate`: holds a listing back until the test lets it through.
+function wire(
+  on: any,
+  tree: Record<string, Entry[]>,
+  gate?: (path: string) => Promise<void> | undefined,
+) {
+  const log = {
+    filled: [] as string[],
+    listed: [] as string[],
+  };
   on("session.cwd", () => ({ value: ROOT }));
-  on("fs.list", (_: any, e: any) => {
+  on("fs.list", async (_: any, e: any) => {
     const path = posix(e.path) ?? ROOT;
     log.listed.push(path);
+    await gate?.(path);
     const entries = tree[path];
     if (!entries) throw new Error("ENOENT");
     return {
@@ -299,6 +308,118 @@ test("a secrets file found by search still needs a second yes", async ($, on) =>
   expect(await ui.find({ text: /looks like a secrets file/ })).toBeDefined();
   await ui.press({ key: "confirm:yes" });
   expect(log.filled).toEqual(["@config/.env "]);
+  await ui.unmount();
+});
+
+const arrowOnto = ($: any, element: string) =>
+  $.ui.focus({
+    component: "Pane",
+    requestId: "file-picker",
+    plugin: "file-picker",
+    element,
+    origin: { kind: "person" },
+  });
+
+test("m and i work on a search hit", async ($, on) => {
+  const log = wire(on, TREE);
+  const ui = await mount($);
+  await ui.press({ key: "search" });
+  const button = "hit:/p/src/components/Button.tsx";
+  expect(await until(ui, { key: button })).toBe(true);
+  await arrowOnto($, button);
+  await ui.press({ key: "mark" });
+  expect(
+    await ui.find({ text: /✓ src\/components\/Button\.tsx/ }),
+  ).toBeDefined();
+  await arrowOnto($, "hit:/p/README.md");
+  await ui.press({ key: "mark" });
+  await ui.press({ key: "insert" });
+  expect(log.filled).toEqual(["@src/components/Button.tsx @README.md "]);
+  expect(await ui.find({ key: "insert" })).toBeUndefined();
+  await ui.unmount();
+});
+
+test("sliding the search list keeps m and l on the slid-to hit", async ($, on) => {
+  const log = wire(on, {
+    "/p": Array.from({ length: 60 }, (_, i) =>
+      file(`f${String(i).padStart(2, "0")}.ts`),
+    ),
+  });
+  const ui = await mount($);
+  await ui.press({ key: "search" });
+  expect(await until(ui, { key: "hit:/p/f00.ts" })).toBe(true);
+  await arrowOnto($, "more:below");
+  let slid = false;
+  for (let i = 0; i < 50 && !slid; i++)
+    slid = (await ui.find({ key: "hit:/p/f00.ts" })) === undefined;
+  expect(slid).toBe(true);
+  // The slide puts the ring on the hit that came into view: the last one.
+  const hits = (await ui.findAll({ type: "Button" }))
+    .map((button: any) => button.props.key as string)
+    .filter((key: string) => key?.startsWith("hit:"));
+  const target = (hits.at(-1) ?? "").slice("hit:/p/".length);
+  expect(target).toMatch(/^f\d\d\.ts$/);
+  await ui.press({ key: "mark" });
+  await ui.press({ key: "insert" });
+  expect(log.filled).toEqual([`@${target} `]);
+  await ui.press({ key: "lines" });
+  expect(await ui.find({ text: `./${target}` })).toBeDefined();
+  await ui.unmount();
+});
+
+test("a walk superseded by f mid-walk stops and doesn't land", async ($, on) => {
+  const tree: Record<string, Entry[]> = {
+    "/p": [folder("a"), file("x.ts")],
+    "/p/a": [folder("b")],
+    "/p/a/b": [file("deep.ts")],
+  };
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let holding = true;
+  const log = wire(on, tree, (path) => {
+    if (path !== "/p/a" || !holding) return undefined;
+    holding = false;
+    return held;
+  });
+  const ui = await mount($);
+  await ui.press({ key: "search" });
+  expect(await until(ui, { text: "searching…" })).toBe(true);
+  await ui.press({ key: "folders" });
+  tree["/p"] = [...(tree["/p"] ?? []), file("new.ts")];
+  await ui.press({ key: "search" });
+  expect(await until(ui, { key: "hit:/p/new.ts" })).toBe(true);
+  expect(await until(ui, { key: "hit:/p/a/b/deep.ts" })).toBe(true);
+  // The first walk resumes after the second landed: it must neither list on
+  // nor replace the second's hits.
+  release();
+  for (let i = 0; i < 50; i++) await ui.find({ key: "filter" });
+  expect(await ui.find({ key: "hit:/p/new.ts" })).toBeDefined();
+  expect(log.listed.filter((path) => path === "/p/a/b")).toHaveLength(1);
+  await ui.unmount();
+});
+
+// The test kit doesn't route the plugin's own $.ui.focus to `ui.focus` mocks,
+// so this checks what Cancel leaves drawn: the search, its filter and query.
+test("Cancel on a secrets confirm in search goes back to the filter", async ($, on) => {
+  const log = wire(on, TREE);
+  const ui = await mount($);
+  await ui.press({ key: "search" });
+  await ui.input({ key: "filter", text: ".env", kind: "change" });
+  const env = { key: "hit:/p/config/.env" };
+  expect(await until(ui, env)).toBe(true);
+  await ui.press(env);
+  expect(await ui.find({ key: "confirm:no" })).toBeDefined();
+  await ui.press({ key: "confirm:no" });
+  expect(await ui.find({ key: "confirm:no" })).toBeUndefined();
+  expect((await ui.find({ key: "filter" }))?.props.value).toBe(".env");
+  expect(await ui.find(env)).toBeDefined();
+  expect(await ui.find({ key: "row:src" })).toBeUndefined();
+  expect(log.filled).toEqual([]);
+  // Not approved by the Cancel: Enter asks again.
+  await ui.press(env);
+  expect(await ui.find({ key: "confirm:no" })).toBeDefined();
   await ui.unmount();
 });
 
