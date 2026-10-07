@@ -397,28 +397,55 @@ const SKIP_DIRS = new Set([
 ]);
 export const WALK_MAX_DEPTH = 12;
 export const WALK_MAX_FILES = 20_000;
+export const WALK_MAX_FOLDERS = 5_000;
 // Folders listed at once; the engine answers each list separately.
 const WALK_BATCH = 16;
 
-export type Walk = { hits: Hit[]; capped: boolean; deep: boolean };
+export type Walk = {
+  hits: Hit[];
+  capped: boolean;
+  deep: boolean;
+  foldersCapped: boolean;
+};
 
 // Lists `root` and its subfolders breadth first, one folder per `list` call.
 // Links are found but never followed, so a linked folder can't loop or lead
-// out of the project. `capped`: stopped at `files`; `deep`: some folders were
-// past `depth` levels down. A folder that can't be listed is skipped.
+// out of the project. `capped`: stopped at `files`; `foldersCapped`: stopped
+// after listing `folders`; `deep`: some folders were past `depth` levels down.
+// A folder that can't be listed is skipped. Once `aborted()` says so, the walk
+// stops listing and returns what it has.
 export const walkProject = async (
   root: string,
   list: (dir: string) => Promise<readonly Entry[]>,
   showHidden: boolean,
-  limits = { depth: WALK_MAX_DEPTH, files: WALK_MAX_FILES },
+  {
+    depth: maxDepth = WALK_MAX_DEPTH,
+    files: maxFiles = WALK_MAX_FILES,
+    folders: maxFolders = WALK_MAX_FOLDERS,
+    aborted = () => false,
+  }: {
+    depth?: number;
+    files?: number;
+    folders?: number;
+    aborted?: () => boolean;
+  } = {},
 ): Promise<Walk> => {
   const hits: Hit[] = [];
   let deep = false;
+  let listedFolders = 0;
   let level = [{ path: root, rel: "" }];
   for (let depth = 1; level.length > 0; depth++) {
     const next: typeof level = [];
-    for (let i = 0; i < level.length; i += WALK_BATCH) {
-      const batch = level.slice(i, i + WALK_BATCH);
+    for (let i = 0; i < level.length; ) {
+      if (aborted()) return { hits, capped: false, deep, foldersCapped: false };
+      if (listedFolders >= maxFolders)
+        return { hits, capped: false, deep, foldersCapped: true };
+      const batch = level.slice(
+        i,
+        i + Math.min(WALK_BATCH, maxFolders - listedFolders),
+      );
+      i += batch.length;
+      listedFolders += batch.length;
       const listed = await Promise.all(
         batch.map((dir) => list(dir.path).catch((): Entry[] => [])),
       );
@@ -432,11 +459,11 @@ export const walkProject = async (
               (!showHidden && entry.name.startsWith("."))
             )
               continue;
-            if (depth >= limits.depth) deep = true;
+            if (depth >= maxDepth) deep = true;
             else next.push({ path, rel });
           } else if (entry.kind === "file" || entry.isLink) {
-            if (hits.length >= limits.files)
-              return { hits, capped: true, deep };
+            if (hits.length >= maxFiles)
+              return { hits, capped: true, deep, foldersCapped: false };
             hits.push({
               path,
               rel,
@@ -450,7 +477,7 @@ export const walkProject = async (
     }
     level = next;
   }
-  return { hits, capped: false, deep };
+  return { hits, capped: false, deep, foldersCapped: false };
 };
 
 // Ranks found files by their name first; a query that only matches the path
