@@ -37,10 +37,11 @@ const PANE = "file-picker";
 const PARENT_KEY = "row:..";
 const MORE_ABOVE = "more:above";
 const MORE_BELOW = "more:below";
-// List: header, filter box (3), '..', the two "more" rows, footer with its
-// margin, the marks row, hint; footers that wrap take more (wrappedRows). Lines: header, status, find box (3), the two
-// "more" rows, footer with its margin, hint.
-const LIST_CHROME_ROWS = 11;
+// List: header, filter box (3), '..' (or search's limits line), the two "more"
+// rows, the footer with its margin, hint; a footer that wraps takes more
+// (wrappedRows). Lines: header, status, find box (3), the two "more" rows,
+// footer with its margin, hint.
+const LIST_CHROME_ROWS = 10;
 const LINES_CHROME_ROWS = 10;
 // A short pane (an inline band under the transcript reports about 11 rows)
 // can't fit that chrome plus a list, and a tree taller than the pane makes the
@@ -1020,22 +1021,22 @@ export const register: Register = (on) => {
     }
 
     // The chrome counts one row for each footer; a narrow pane wraps them.
-    const footerRows =
-      wrappedRows(
-        [
-          "l: lines",
-          "s: search project",
-          "u: up",
-          ...(prevDir && prevDir !== dir ? ["b: back"] : []),
-          "c: cwd",
-          `h: ${hiddenLabel}`,
-          "a: @ folder",
-        ],
-        e.props.bodyColumns,
-      ) + wrappedRows(markLabels, e.props.bodyColumns);
+    const footerRows = wrappedRows(
+      [
+        "l: lines",
+        "s: search project",
+        "u: up",
+        ...(prevDir && prevDir !== dir ? ["b: back"] : []),
+        "c: cwd",
+        `h: ${hiddenLabel}`,
+        "a: @ folder",
+        ...markLabels,
+      ],
+      e.props.bodyColumns,
+    );
     listRows = Math.max(
       1,
-      e.props.scroll.bodyRows - LIST_CHROME_ROWS - (footerRows - 2) + saved,
+      e.props.scroll.bodyRows - LIST_CHROME_ROWS - (footerRows - 1) + saved,
     );
     const pathMode = isPathQuery(query);
     const ranked = pathMode ? [] : rankEntries(listed, query, showHidden);
@@ -1220,8 +1221,6 @@ export const register: Register = (on) => {
           >
             @ folder
           </Button>
-        </Box>
-        <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
           <Button
             key="mark"
             plain
