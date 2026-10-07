@@ -147,6 +147,12 @@ test("ranking: name matches first, closer path breaks ties, path-only last", asy
   expect(rankHits(hits, "comp/but", false).map((h) => h.rel)).toEqual([
     "src/components/Button.tsx",
   ]);
+  // No query: alphabetical by path, whatever the name lengths.
+  expect(
+    rankHits([hit("b/x.ts"), hit("a/long-name.ts")], "", false).map(
+      (h) => h.rel,
+    ),
+  ).toEqual(["a/long-name.ts", "b/x.ts"]);
   expect(rankHits([hit(".env"), hit("a.ts")], "", false)).toHaveLength(1);
   expect(rankHits([hit(".env"), hit("a.ts")], ".e", false)).toHaveLength(1);
 });
