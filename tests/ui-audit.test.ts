@@ -235,9 +235,9 @@ surfTest("dotfiles hidden, toggled, shown by '.' filter", async (s, $, on) => {
 
   const ui = await mount($, s);
   expect(await names(ui)).toEqual(["row:a.txt"]);
-  await ui.press({ key: "dotfiles" });
+  await ui.press({ key: "hidden" });
   expect((await names(ui)).sort()).toEqual(["row:.hidden", "row:a.txt"]);
-  await ui.press({ key: "hide dotfiles" });
+  await ui.press({ key: "hidden" });
   expect(await names(ui)).toEqual(["row:a.txt"]);
   await ui.input({ key: "filter", text: ".", kind: "change" });
   expect(await names(ui)).toContain("row:.hidden");

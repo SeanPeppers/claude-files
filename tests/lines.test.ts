@@ -2,6 +2,7 @@ import { expect, test } from "claude-code/testing";
 
 import {
   findLine,
+  fitCells,
   isBinaryText,
   isSecretPath,
   mentionFor,
@@ -164,7 +165,7 @@ for (const surface of SURFACES) {
   test(`secrets files need a second yes, to add or to show [${surface}]`, async ($, on) => {
     const log = wire(on);
     const ui = await mount($, surface);
-    await ui.press({ key: "dotfiles" });
+    await ui.press({ key: "hidden" });
     await ui.press({ key: "row:.env" });
     expect(await ui.find({ key: "confirm:no" })).toBeDefined();
     await ui.press({ key: "confirm:no" });
@@ -172,9 +173,9 @@ for (const surface of SURFACES) {
     await ui.press({ key: "row:.env" });
     await ui.press({ key: "confirm:yes" });
     expect(log.filled).toEqual(["@.env "]);
+    // Confirmed once, it is not asked about again this session.
     await openLinesOf($, ui, ".env");
-    expect(await ui.find({ key: "confirm:yes" })).toBeDefined();
-    await ui.press({ key: "confirm:yes" });
+    expect(await ui.find({ key: "confirm:yes" })).toBeUndefined();
     expect(await ui.find({ key: "line:1" })).toBeDefined();
     await ui.unmount();
   });
@@ -246,4 +247,41 @@ test("preview line helpers", async () => {
   expect(findLine(lines, "gamma", 0)).toBe(2);
   expect(findLine(lines, "zzz", 0)).toBe(-1);
   expect(findLine(lines, "", 0)).toBe(-1);
+});
+
+test("review fixes: secrets list, cell widths, #L names", async () => {
+  for (const path of [
+    "/p/.envrc",
+    "/h/.config/gcloud/application_default_credentials.json",
+    "/p/id_rsa_work",
+    "/h/.config/gh/hosts.yml",
+    "/h/.pgpass",
+    "/p/putty.ppk",
+  ])
+    expect([path, isSecretPath(path)]).toEqual([path, true]);
+  for (const path of [
+    "/p/serviceaccount_controller.go",
+    "/p/service_account_test.py",
+    "/p/tokens.json",
+    "/p/KEYS.asc",
+    "/h/.ssh/id_ed25519.pub",
+    "/p/secrets.py",
+  ])
+    expect([path, isSecretPath(path)]).toEqual([path, false]);
+  expect(fitCells("abcdef", 4)).toBe("abc…");
+  expect(fitCells("漢字漢字漢字", 7)).toBe("漢字漢…");
+  expect(fitCells("😀😀😀", 5)).toBe("😀😀…");
+  expect(fitCells("short", 10)).toBe("short");
+  expect(mentionFor("/p/x#L5", "/p")).toBeUndefined();
+});
+
+test("find goes to the next match each time Enter is pressed", async ($, on) => {
+  wire(on);
+  const ui = await mount($, "terminal", 20);
+  await openLinesOf($, ui, "long.ts");
+  await ui.input({ key: "find", text: "line 3" });
+  expect(await ui.find({ key: "line:3" })).toBeDefined();
+  await ui.input({ key: "find", text: "line 3" });
+  expect(await ui.find({ key: "line:30" })).toBeDefined();
+  await ui.unmount();
 });

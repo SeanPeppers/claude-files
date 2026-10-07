@@ -14,11 +14,11 @@ or press `l` and pick just the lines you care about: `@src/app.ts#L40-72`.
 ╭──────────────────────────────────────────────────────────────╮
 │ find text, Enter jumps to the next match                     │
 ╰──────────────────────────────────────────────────────────────╯
- ↑ 37 more
+ ↑ 39 more
  40 │ export function handleRequest(req: Request) {
  41 │   const user = await authenticate(req);
  42 │   if (!user) return unauthorized();
- ↓ 36 more
+ ↓ 38 more
 
  f: files  w: whole file  x: clear start
 
@@ -51,7 +51,7 @@ Accuracy was the same in every way of asking (60/60 correct each), so the gain
 is speed and cost, not correctness, at least for questions this specific.
 
 A second run on the open-source [click](https://github.com/pallets/click) library
-(12 questions, 108 runs) agreed: exact lines saved 52% ± 3% of tokens and
+(12 questions × 3 ways × 3 repeats = 108 runs, no file-name way) agreed: exact lines saved 52% ± 3% of tokens and
 45% ± 13% of cost against a description.
 
 Two honest caveats:
@@ -62,7 +62,8 @@ Two honest caveats:
   the cheapest option on every file we tried, large ones included. That's what
   `l` is for.
 - Part of every run is Claude Code's fixed setup (about 14k tokens here), so in
-  absolute terms the saving is roughly 17k–41k tokens per question pointed at.
+  absolute terms the saving per question is about 15k tokens for naming the
+  file, 29k for the whole file and 41k for exact lines.
   The percentage shrinks in a long session; the absolute saving doesn't.
 
 ## Install
@@ -89,11 +90,11 @@ To update later: `claude plugin update file-picker@claude-files`.
 | type | filter the folder: prefix matches first, then substring, then fuzzy |
 | `↑` `↓` | move between the filter box and the rows; long folders slide as you go |
 | `Enter` on a file | put `@path` in the prompt at the cursor |
-| `l` on a file | open it line by line to pick a range |
+| `l` on a file | view the file and pick exact lines (see below) |
 | `Enter` on a folder / `../` | open it / go up |
 | `Enter` in the filter | open the best match, or jump to a typed path (`../notes`, `/etc`, `D:\data`) |
 | `u` `b` `c` | up a folder, back to the last folder, back to the working directory |
-| `h` | show or hide dotfiles |
+| `h` | show or hide hidden files: names starting with `.`, like `.env`, `.github` or `.gitignore` |
 | `a` | put the current folder in the prompt |
 | `Esc` | close the pane |
 
@@ -130,12 +131,17 @@ never writes files, runs commands or touches the network, never reads your
 Claude Code settings, and nothing is sent until you press Enter on the prompt
 yourself.
 
-**Secrets files need a second yes.** For `.env` files, private keys (`*.pem`,
-`*.key`, `id_rsa`, `id_ed25519`, ...), credential files (`credentials`,
-`.netrc`, `.npmrc`, `kaggle.json`, `secrets.*`, service-account JSON) and
-anything inside `.ssh`, `.aws`, `.gnupg`, `.kube` or `.docker`, the pane asks
-before adding the file (its contents would go to Claude) or showing its lines
-(they'd be on your screen). Templates like `.env.example` aren't flagged.
+**Secrets files need a second yes.** For `.env` and `.envrc` files, private
+keys (`*.pem`, `*.key`, `*.ppk`, `id_rsa`, `id_ed25519`, ...), credential files
+(`credentials`, `application_default_credentials.json`, `.netrc`, `.npmrc`,
+`.pgpass`, `kaggle.json`, `secrets.json`/`.yaml`/`.toml`, service-account JSON,
+the GitHub CLI's `hosts.yml`) and anything inside `.ssh`, `.aws`, `.gnupg`,
+`.kube` or `.docker`, the pane asks before adding the file (its contents would
+go to Claude) or showing its lines (they'd be on your screen, and lines you pick
+go to Claude). Say yes once and that file isn't asked about again this session.
+Templates like `.env.example` and public keys (`.pub`) aren't flagged, and
+neither is a link named innocently that leads to one of these: both the link and
+its target are checked.
 
 Filenames and file contents come from whatever you browse, including repos you
 just cloned, so they're treated as untrusted:
@@ -152,7 +158,7 @@ just cloned, so they're treated as untrusted:
   `~/private/diary.md` shows up as exactly that. Dangling links, devices and
   pipes are refused.
 
-Found a problem? See [SECURITY.md](SECURITY.md).
+Found a problem? Please open an issue.
 
 ## What the hooks do
 
@@ -192,12 +198,9 @@ Edits reload while that session runs. Before sending a change:
 ```
 claude plugin validate --strict .
 claude plugin test .
-npx --yes @biomejs/biome@2.5.15 check --write .
 ```
 
-CI runs validation and tests on Linux, macOS and Windows, Biome for lint and
-format, and [zizmor](https://github.com/zizmorcore/zizmor) on the workflows;
-Dependabot keeps the pinned actions current.
+CI runs validation and tests on Linux, macOS and Windows.
 
 | File | What |
 |---|---|

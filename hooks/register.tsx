@@ -5,6 +5,7 @@ import {
   baseName,
   displayName,
   findLine,
+  fitCells,
   humanSize,
   isBinaryText,
   isPathQuery,
@@ -70,6 +71,10 @@ let lineRows = 10;
 let focusedKey = "";
 // The previewed file's lines, read once when the line view opens.
 let previewLines: { path: string; lines: string[] } | undefined;
+// The last line find landed on, so Enter in the find box goes to the next one.
+let lastFind = -1;
+// Secrets-looking files already confirmed this session, by resolved path.
+const approved = new Set<string>();
 
 const rowKey = (name: string) => `row:${name}`;
 const lineKey = (n: number) => `line:${n}`;
@@ -131,7 +136,11 @@ async function goTo($: EngineInterface, path: string) {
 async function slide($: EngineInterface, by: 1 | -1) {
   if (previewLines) {
     const total = previewLines.lines.length;
-    const offset = await read($, lineOffsetAtom);
+    if (total === 0) return;
+    const offset = Math.min(
+      await read($, lineOffsetAtom),
+      Math.max(0, total - lineRows),
+    );
     const index = Math.min(
       Math.max(0, by > 0 ? offset + lineRows : offset - 1),
       total - 1,
@@ -143,7 +152,10 @@ async function slide($: EngineInterface, by: 1 | -1) {
   }
   const dir = await currentDir($);
   const { ranked } = await rankedIn($, dir, await read($, queryAtom));
-  const offset = await read($, offsetAtom);
+  const offset = Math.min(
+    await read($, offsetAtom),
+    Math.max(0, ranked.length - listRows),
+  );
   const index = by > 0 ? offset + listRows : offset - 1;
   const target = ranked[Math.min(Math.max(0, index), ranked.length - 1)];
   if (!target) return;
@@ -157,7 +169,7 @@ async function pick($: EngineInterface, path: string, range?: LineRange) {
   const mention = mentionFor(path, await $.session.cwd(), range);
   if (!mention)
     return $.ui.toast(
-      `Not added: ${displayName(baseName(path))} has a quote or control character, which could inject text into the prompt`,
+      `Not added: ${displayName(baseName(path))} can't be mentioned safely (a quote, a control character or a #L in its name could change what the prompt says)`,
     );
   const filled = await $.prompt
     .fill({ text: mention, mode: "insert" })
@@ -170,14 +182,21 @@ async function pick($: EngineInterface, path: string, range?: LineRange) {
 }
 
 // A secrets-looking file needs a second yes before it is added or shown.
+// Both the row's own path and where a link leads are checked; once confirmed,
+// the file isn't asked about again this session.
 async function confirmFirst(
   $: EngineInterface,
-  path: string,
+  row: string,
+  target: string,
   action: "add" | "lines",
 ) {
-  if (!isSecretPath(path) || (await read($, confirmAtom)) === path)
+  if (!(isSecretPath(row) || isSecretPath(target)) || approved.has(target))
     return false;
-  await update($, confirmAtom, () => path);
+  if ((await read($, confirmAtom)) === row) {
+    approved.add(target);
+    return false;
+  }
+  await update($, confirmAtom, () => row);
   await update($, confirmActionAtom, () => action);
   await focusFirst($, ["confirm:no"]);
   return true;
@@ -209,7 +228,7 @@ async function openPath($: EngineInterface, path: string) {
     );
   if (stat.kind === "dir") return goTo($, path);
   const target = stat.isLink && stat.realPath ? stat.realPath : path;
-  if (await confirmFirst($, target, "add")) return;
+  if (await confirmFirst($, path, target, "add")) return;
   await clearConfirm($);
   return pick($, target);
 }
@@ -220,7 +239,7 @@ async function openLines($: EngineInterface, path: string) {
   if (stat?.kind !== "file")
     return $.ui.toast(`Only files open line by line: ${displayName(path)}`);
   const target = stat.isLink && stat.realPath ? stat.realPath : path;
-  if (await confirmFirst($, target, "lines")) return;
+  if (await confirmFirst($, path, target, "lines")) return;
   await clearConfirm($);
   let text: string;
   try {
@@ -234,9 +253,10 @@ async function openLines($: EngineInterface, path: string) {
     return $.ui.toast(
       `${displayName(baseName(target))} is binary; Enter adds the whole file`,
     );
-  previewLines = { path: target, lines: text.split("\n") };
-  if (previewLines.lines.length > 1 && previewLines.lines.at(-1) === "")
-    previewLines.lines.pop();
+  const lines = text === "" ? [] : text.split("\n");
+  if (lines.length > 1 && lines.at(-1) === "") lines.pop();
+  previewLines = { path: target, lines };
+  lastFind = -1;
   await update($, anchorAtom, () => 0);
   await update($, lineOffsetAtom, () => 0);
   await update($, previewAtom, () => target);
@@ -272,9 +292,12 @@ async function findInLines($: EngineInterface, query: string) {
   const offset = await read($, lineOffsetAtom);
   const from = focusedKey.startsWith("line:")
     ? Number(focusedKey.slice(5)) - 1
-    : offset - 1;
+    : lastFind >= 0
+      ? lastFind
+      : offset - 1;
   const index = findLine(previewLines.lines, query, from);
   if (index < 0) return $.ui.toast(`Not found: ${displayName(query)}`);
+  lastFind = index;
   await update($, lineOffsetAtom, () =>
     windowAround(index, offset, lineRows, previewLines?.lines.length ?? 0),
   );
@@ -302,6 +325,10 @@ export const register: Register = (on) => {
     // The filter box opens empty, so the list must too.
     await update($, queryAtom, () => "");
     await clearConfirm($);
+    // Reopening starts at the folder: a file shown before may have changed.
+    previewLines = undefined;
+    await update($, previewAtom, () => "");
+    await update($, anchorAtom, () => 0);
     await $.ui.open({
       id: PANE,
       title: "Files",
@@ -350,7 +377,7 @@ export const register: Register = (on) => {
           </Text>
           <Text>
             {action === "lines"
-              ? "Its contents would be shown here on screen."
+              ? "Its contents would be shown here, and any lines you pick are sent to Claude with your prompt."
               : "Its contents would be sent to Claude when you send the prompt."}
           </Text>
           <Box flexDirection="row" gap={2}>
@@ -397,7 +424,9 @@ export const register: Register = (on) => {
             <Text bold color="claude" wrap="truncate-start">
               {relative(preview)}
             </Text>
-            <Text dimColor>{`${lines.length} lines`}</Text>
+            <Text
+              dimColor
+            >{`${lines.length} ${lines.length === 1 ? "line" : "lines"}`}</Text>
           </Box>
           <Text dimColor={!anchor} color={anchor ? "suggestion" : undefined}>
             {anchor
@@ -425,6 +454,11 @@ export const register: Register = (on) => {
             >
               {`↑ ${offset} more`}
             </Button>
+          )}
+          {lines.length === 0 && (
+            <Text dimColor italic>
+              (empty file)
+            </Text>
           )}
           {shown.map((text, i) => {
             const n = offset + i + 1;
@@ -601,7 +635,10 @@ export const register: Register = (on) => {
                 dimColor={!isDir}
                 onPress={() => openPath($, joinPath(dir, entry.name))}
               >
-                {`${displayName(entry.name)}${isDir ? "/" : ""}${entry.isLink ? " →" : ""}`}
+                {fitCells(
+                  `${displayName(entry.name)}${isDir ? "/" : ""}${entry.isLink ? " →" : ""}`,
+                  Math.max(10, e.props.bodyColumns - 8),
+                )}
               </Button>
               {entry.kind === "file" && (
                 <Text dimColor>{humanSize(entry.size)}</Text>
@@ -620,8 +657,14 @@ export const register: Register = (on) => {
           </Button>
         )}
         <Box flexDirection="row" gap={2} marginTop={1}>
-          <Button plain hotkey="l" dimColor onPress={() => linesOfFocused($)}>
-            lines
+          <Button
+            key="lines"
+            plain
+            hotkey="l"
+            dimColor
+            onPress={() => linesOfFocused($)}
+          >
+            view & pick lines
           </Button>
           <Button
             plain
@@ -640,19 +683,24 @@ export const register: Register = (on) => {
             cwd
           </Button>
           <Button
+            key="hidden"
             plain
             hotkey="h"
             dimColor
-            onPress={() => update($, hiddenAtom, (v) => !v)}
+            onPress={() => {
+              // The highlighted row may be about to vanish.
+              focusedKey = "";
+              return update($, hiddenAtom, (v) => !v);
+            }}
           >
-            {showHidden ? "hide dotfiles" : "dotfiles"}
+            {showHidden ? "hide hidden files" : "hidden files"}
           </Button>
           <Button plain hotkey="a" dimColor onPress={() => pick($, dir)}>
             @ this folder
           </Button>
         </Box>
         <Text dimColor wrap="truncate-end">
-          ↑↓ move · Enter add/open · l lines · Esc close
+          ↑↓ move · Enter add file/open folder · l view & pick lines · Esc close
         </Text>
       </Box>
     );
