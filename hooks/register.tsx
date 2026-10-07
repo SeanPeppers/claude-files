@@ -1,5 +1,4 @@
-import type { EngineInterface, Register } from "claude-code";
-import { atom, read, update } from "claude-code";
+import type { EngineInterface, PluginState, Register } from "claude-code";
 import type { Entry, Hit, LineRange, Walk } from "./rank";
 import {
   baseName,
@@ -50,54 +49,30 @@ const LINES_CHROME_ROWS = 10;
 const COMPACT_BELOW_ROWS = 20;
 const COMPACT_SAVES_ROWS = 4;
 // '' means the session's working directory, resolved at draw time.
-const dirAtom = atom({ plugin: "file-picker", key: "dir" } as const, "");
-const prevDirAtom = atom(
-  { plugin: "file-picker", key: "prevDir" } as const,
-  "",
-);
-const hiddenAtom = atom(
-  { plugin: "file-picker", key: "showHidden" } as const,
-  false,
-);
-const queryAtom = atom({ plugin: "file-picker", key: "query" } as const, "");
-const offsetAtom = atom({ plugin: "file-picker", key: "offset" } as const, 0);
+const DIR_STATE = { plugin: "file-picker", key: "dir" } as const;
+const PREVDIR_STATE = { plugin: "file-picker", key: "prevDir" } as const;
+const SHOWHIDDEN_STATE = { plugin: "file-picker", key: "showHidden" } as const;
+const QUERY_STATE = { plugin: "file-picker", key: "query" } as const;
+const OFFSET_STATE = { plugin: "file-picker", key: "offset" } as const;
 // The file shown line by line, or '' for the folder list.
-const previewAtom = atom(
-  { plugin: "file-picker", key: "preview" } as const,
-  "",
-);
-const lineOffsetAtom = atom(
-  { plugin: "file-picker", key: "lineOffset" } as const,
-  0,
-);
+const PREVIEW_STATE = { plugin: "file-picker", key: "preview" } as const;
+const LINEOFFSET_STATE = { plugin: "file-picker", key: "lineOffset" } as const;
 // The first line of a range being picked, or 0.
-const anchorAtom = atom({ plugin: "file-picker", key: "anchor" } as const, 0);
+const ANCHOR_STATE = { plugin: "file-picker", key: "anchor" } as const;
 // The line the ring is on, or 0: state, so the range redraws as it moves.
-const focusLineAtom = atom(
-  { plugin: "file-picker", key: "focusLine" } as const,
-  0,
-);
+const FOCUSLINE_STATE = { plugin: "file-picker", key: "focusLine" } as const;
 // A secrets-looking file waiting for a second yes, and what to do with it.
-const confirmAtom = atom(
-  { plugin: "file-picker", key: "confirm" } as const,
-  "",
-);
-const confirmActionAtom = atom(
-  { plugin: "file-picker", key: "confirmAction" } as const,
-  "",
-);
+const CONFIRM_STATE = { plugin: "file-picker", key: "confirm" } as const;
+const CONFIRMACTION_STATE = {
+  plugin: "file-picker",
+  key: "confirmAction",
+} as const;
 // Files marked for one insert, by the row's path, across folders.
-const markedAtom = atom(
-  { plugin: "file-picker", key: "marked" } as const,
-  [] as string[],
-);
+const MARKED_STATE = { plugin: "file-picker", key: "marked" } as const;
 // Whether the filter searches the whole project instead of the folder, and a
 // count bumped when a project walk finishes, so the pane redraws.
-const searchAtom = atom(
-  { plugin: "file-picker", key: "search" } as const,
-  false,
-);
-const walkedAtom = atom({ plugin: "file-picker", key: "walked" } as const, 0);
+const SEARCH_STATE = { plugin: "file-picker", key: "search" } as const;
+const WALKED_STATE = { plugin: "file-picker", key: "walked" } as const;
 
 // Rows of the list or of the file that fit in the pane, as last drawn. Both
 // are drawn a window at a time: a pane taller than its tree takes the arrows
@@ -115,12 +90,264 @@ const approved = new Set<string>();
 // What the confirm screen is asking about: where the row really leads.
 let confirmTarget: { real: string; escapes: boolean } | undefined;
 
+type State = PluginState["file-picker"];
+const INITIAL: State = {
+  dir: "",
+  prevDir: "",
+  showHidden: false,
+  query: "",
+  offset: 0,
+  preview: "",
+  lineOffset: 0,
+  anchor: 0,
+  focusLine: 0,
+  confirm: "",
+  confirmAction: "",
+  marked: [] as string[],
+  search: false,
+  walked: 0,
+};
+
+// The plugin directory lets `$` go only to functions declared in this file,
+// and the engine wants every $.state call to name its key literally, so each
+// key gets its own case here.
+async function heldState<K extends keyof State>(
+  $: EngineInterface,
+  key: K,
+): Promise<{ value: State[K]; version: number }> {
+  switch (key) {
+    case "dir": {
+      const held = await $.state.get(DIR_STATE);
+      return {
+        value: (held.value ?? INITIAL.dir) as State[K],
+        version: held.version,
+      };
+    }
+    case "prevDir": {
+      const held = await $.state.get(PREVDIR_STATE);
+      return {
+        value: (held.value ?? INITIAL.prevDir) as State[K],
+        version: held.version,
+      };
+    }
+    case "showHidden": {
+      const held = await $.state.get(SHOWHIDDEN_STATE);
+      return {
+        value: (held.value ?? INITIAL.showHidden) as State[K],
+        version: held.version,
+      };
+    }
+    case "query": {
+      const held = await $.state.get(QUERY_STATE);
+      return {
+        value: (held.value ?? INITIAL.query) as State[K],
+        version: held.version,
+      };
+    }
+    case "offset": {
+      const held = await $.state.get(OFFSET_STATE);
+      return {
+        value: (held.value ?? INITIAL.offset) as State[K],
+        version: held.version,
+      };
+    }
+    case "preview": {
+      const held = await $.state.get(PREVIEW_STATE);
+      return {
+        value: (held.value ?? INITIAL.preview) as State[K],
+        version: held.version,
+      };
+    }
+    case "lineOffset": {
+      const held = await $.state.get(LINEOFFSET_STATE);
+      return {
+        value: (held.value ?? INITIAL.lineOffset) as State[K],
+        version: held.version,
+      };
+    }
+    case "anchor": {
+      const held = await $.state.get(ANCHOR_STATE);
+      return {
+        value: (held.value ?? INITIAL.anchor) as State[K],
+        version: held.version,
+      };
+    }
+    case "focusLine": {
+      const held = await $.state.get(FOCUSLINE_STATE);
+      return {
+        value: (held.value ?? INITIAL.focusLine) as State[K],
+        version: held.version,
+      };
+    }
+    case "confirm": {
+      const held = await $.state.get(CONFIRM_STATE);
+      return {
+        value: (held.value ?? INITIAL.confirm) as State[K],
+        version: held.version,
+      };
+    }
+    case "confirmAction": {
+      const held = await $.state.get(CONFIRMACTION_STATE);
+      return {
+        value: (held.value ?? INITIAL.confirmAction) as State[K],
+        version: held.version,
+      };
+    }
+    case "marked": {
+      const held = await $.state.get(MARKED_STATE);
+      return {
+        value: (held.value ?? INITIAL.marked) as State[K],
+        version: held.version,
+      };
+    }
+    case "search": {
+      const held = await $.state.get(SEARCH_STATE);
+      return {
+        value: (held.value ?? INITIAL.search) as State[K],
+        version: held.version,
+      };
+    }
+    case "walked": {
+      const held = await $.state.get(WALKED_STATE);
+      return {
+        value: (held.value ?? INITIAL.walked) as State[K],
+        version: held.version,
+      };
+    }
+  }
+  throw new Error(`unknown state ${key}`);
+}
+
+async function writeState<K extends keyof State>(
+  $: EngineInterface,
+  key: K,
+  value: State[K],
+  version: number,
+): Promise<boolean> {
+  switch (key) {
+    case "dir": {
+      const done = await $.state.set(DIR_STATE, value as State["dir"], {
+        ifVersion: version,
+      });
+      return done.isSet;
+    }
+    case "prevDir": {
+      const done = await $.state.set(PREVDIR_STATE, value as State["prevDir"], {
+        ifVersion: version,
+      });
+      return done.isSet;
+    }
+    case "showHidden": {
+      const done = await $.state.set(
+        SHOWHIDDEN_STATE,
+        value as State["showHidden"],
+        { ifVersion: version },
+      );
+      return done.isSet;
+    }
+    case "query": {
+      const done = await $.state.set(QUERY_STATE, value as State["query"], {
+        ifVersion: version,
+      });
+      return done.isSet;
+    }
+    case "offset": {
+      const done = await $.state.set(OFFSET_STATE, value as State["offset"], {
+        ifVersion: version,
+      });
+      return done.isSet;
+    }
+    case "preview": {
+      const done = await $.state.set(PREVIEW_STATE, value as State["preview"], {
+        ifVersion: version,
+      });
+      return done.isSet;
+    }
+    case "lineOffset": {
+      const done = await $.state.set(
+        LINEOFFSET_STATE,
+        value as State["lineOffset"],
+        { ifVersion: version },
+      );
+      return done.isSet;
+    }
+    case "anchor": {
+      const done = await $.state.set(ANCHOR_STATE, value as State["anchor"], {
+        ifVersion: version,
+      });
+      return done.isSet;
+    }
+    case "focusLine": {
+      const done = await $.state.set(
+        FOCUSLINE_STATE,
+        value as State["focusLine"],
+        { ifVersion: version },
+      );
+      return done.isSet;
+    }
+    case "confirm": {
+      const done = await $.state.set(CONFIRM_STATE, value as State["confirm"], {
+        ifVersion: version,
+      });
+      return done.isSet;
+    }
+    case "confirmAction": {
+      const done = await $.state.set(
+        CONFIRMACTION_STATE,
+        value as State["confirmAction"],
+        { ifVersion: version },
+      );
+      return done.isSet;
+    }
+    case "marked": {
+      const done = await $.state.set(MARKED_STATE, value as State["marked"], {
+        ifVersion: version,
+      });
+      return done.isSet;
+    }
+    case "search": {
+      const done = await $.state.set(SEARCH_STATE, value as State["search"], {
+        ifVersion: version,
+      });
+      return done.isSet;
+    }
+    case "walked": {
+      const done = await $.state.set(WALKED_STATE, value as State["walked"], {
+        ifVersion: version,
+      });
+      return done.isSet;
+    }
+  }
+  throw new Error(`unknown state ${key}`);
+}
+
+async function readState<K extends keyof State>($: EngineInterface, key: K) {
+  const held = await heldState($, key);
+  return held.value;
+}
+
+// Writes only over the version it read, retrying when another write landed in
+// between, so two quick presses both count.
+async function updateState<K extends keyof State>(
+  $: EngineInterface,
+  key: K,
+  next: (value: State[K]) => State[K],
+) {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const held = await heldState($, key);
+    if (await writeState($, key, next(held.value), held.version)) return;
+  }
+  throw new Error(`state ${key} kept changing`);
+}
+
 const rowKey = (name: string) => `row:${name}`;
 const hitKey = (path: string) => `hit:${path}`;
 const lineKey = (n: number) => `line:${n}`;
 
 async function currentDir($: EngineInterface) {
-  return (await read($, dirAtom)) || (await $.session.cwd());
+  const dir = await readState($, "dir");
+  if (dir) return dir;
+  return $.session.cwd();
 }
 
 // The folder's listing, kept until the folder changes or /files reopens:
@@ -153,7 +380,7 @@ function rankedHits(walk: Walk, query: string, hidden: boolean) {
 // Starts a fresh walk of the working directory; the pane shows "searching…"
 // until it lands. A walk started later wins over an older one still running.
 async function walkCwd($: EngineInterface) {
-  const showHidden = await read($, hiddenAtom);
+  const showHidden = await readState($, "showHidden");
   const root = await $.session.cwd();
   const current: { walk?: Walk } = {};
   project = current;
@@ -164,16 +391,16 @@ async function walkCwd($: EngineInterface) {
   });
   if (project !== current) return;
   current.walk = walk;
-  await update($, walkedAtom, (n) => n + 1);
+  await updateState($, "walked", (n) => n + 1);
 }
 
-async function setSearch($: EngineInterface, on: boolean) {
+async function setSearch($: EngineInterface, enabled: boolean) {
   project = undefined;
   focusedKey = "";
-  await update($, searchAtom, () => on);
-  await update($, queryAtom, () => "");
-  await update($, offsetAtom, () => 0);
-  if (on) void walkCwd($).catch(() => undefined);
+  await updateState($, "search", () => enabled);
+  await updateState($, "query", () => "");
+  await updateState($, "offset", () => 0);
+  if (enabled) void walkCwd($).catch(() => undefined);
   await focusFirst($, ["filter"]);
 }
 
@@ -181,7 +408,7 @@ async function rankedIn($: EngineInterface, dir: string, query: string) {
   const listed = await listDir($, dir).catch((): Entry[] => []);
   return isPathQuery(query)
     ? []
-    : rankEntries(listed, query, await read($, hiddenAtom));
+    : rankEntries(listed, query, await readState($, "showHidden"));
 }
 
 // Where a picked path really leads, following links in any folder on the way,
@@ -193,9 +420,10 @@ async function resolveFile($: EngineInterface, path: string) {
   if (!stat) return undefined;
   const real = stat.realPath ?? path;
   const cwd = await $.session.cwd();
-  const realCwd =
-    (await $.fs.stat(cwd, { resolve: true }).catch(() => undefined))
-      ?.realPath ?? cwd;
+  const cwdStat = await $.fs
+    .stat(cwd, { resolve: true })
+    .catch(() => undefined);
+  const realCwd = cwdStat?.realPath ?? cwd;
   const inProject = isInside(real, realCwd);
   return {
     stat,
@@ -242,13 +470,13 @@ async function goTo($: EngineInterface, path: string) {
   const childIndex = child
     ? ranked.findIndex((entry) => entry.name === child)
     : -1;
-  await update($, prevDirAtom, () => from);
-  await update($, dirAtom, () => path);
+  await updateState($, "prevDir", () => from);
+  await updateState($, "dir", () => path);
   // A linked folder picked from a project search opens as a folder.
   project = undefined;
-  await update($, searchAtom, () => false);
-  await update($, queryAtom, () => "");
-  await update($, offsetAtom, () =>
+  await updateState($, "search", () => false);
+  await updateState($, "query", () => "");
+  await updateState($, "offset", () =>
     childIndex < 0 ? 0 : windowAround(childIndex, 0, listRows, ranked.length),
   );
   await focusFirst($, [
@@ -263,7 +491,7 @@ async function goTo($: EngineInterface, path: string) {
 // hook can miss it and the highlight would lag a row or more behind.
 async function focusLine($: EngineInterface, n: number) {
   focusedKey = lineKey(n);
-  await update($, focusLineAtom, () => n);
+  await updateState($, "focusLine", () => n);
   await focusFirst($, [lineKey(n)]);
 }
 
@@ -274,23 +502,24 @@ async function slide($: EngineInterface, by: 1 | -1) {
     const total = previewLines.lines.length;
     if (total === 0) return;
     const offset = Math.min(
-      await read($, lineOffsetAtom),
+      await readState($, "lineOffset"),
       Math.max(0, total - lineRows),
     );
     const index = Math.min(
       Math.max(0, by > 0 ? offset + lineRows : offset - 1),
       total - 1,
     );
-    await update($, lineOffsetAtom, () =>
+    await updateState($, "lineOffset", () =>
       windowAround(index, offset, lineRows, total),
     );
     return focusLine($, index + 1);
   }
-  const query = await read($, queryAtom);
+  const query = await readState($, "query");
   const walk = project?.walk;
-  const keys = (await read($, searchAtom))
+  const searching = await readState($, "search");
+  const keys = searching
     ? walk
-      ? rankedHits(walk, query, await read($, hiddenAtom)).map((hit) =>
+      ? rankedHits(walk, query, await readState($, "showHidden")).map((hit) =>
           hitKey(hit.path),
         )
       : []
@@ -298,7 +527,7 @@ async function slide($: EngineInterface, by: 1 | -1) {
         rowKey(entry.name),
       );
   const offset = Math.min(
-    await read($, offsetAtom),
+    await readState($, "offset"),
     Math.max(0, keys.length - listRows),
   );
   const index = Math.min(
@@ -307,7 +536,7 @@ async function slide($: EngineInterface, by: 1 | -1) {
   );
   const target = keys[index];
   if (!target) return;
-  await update($, offsetAtom, () =>
+  await updateState($, "offset", () =>
     windowAround(index, offset, listRows, keys.length),
   );
   // Recorded here too: the focus event a slide raises can arrive before the
@@ -349,33 +578,31 @@ async function confirmFirst(
   if (!needsConfirm(row, file)) return false;
   // The yes approves only the file the screen named: a link retargeted in
   // between shows the confirm again, with the new target.
-  if (
-    (await read($, confirmAtom)) === row &&
-    confirmTarget?.real === file.real
-  ) {
+  const asking = await readState($, "confirm");
+  if (asking === row && confirmTarget?.real === file.real) {
     approved.add(file.real);
     return false;
   }
   confirmTarget = file;
-  await update($, confirmAtom, () => row);
-  await update($, confirmActionAtom, () => action);
+  await updateState($, "confirm", () => row);
+  await updateState($, "confirmAction", () => action);
   await focusFirst($, ["confirm:no"]);
   return true;
 }
 
 async function clearConfirm($: EngineInterface) {
-  await update($, confirmAtom, () => "");
-  await update($, confirmActionAtom, () => "");
+  await updateState($, "confirm", () => "");
+  await updateState($, "confirmAction", () => "");
 }
 
 // Cancel: the confirm buttons vanish with the screen, so the ring goes back
 // to the file, or the arrows would fall out of the pane.
 async function cancelConfirm($: EngineInterface) {
-  const path = await read($, confirmAtom);
+  const path = await readState($, "confirm");
   await clearConfirm($);
   // In search the ring goes back to the box, so typing goes on refining the
   // search instead of reaching the main prompt.
-  if (await read($, searchAtom)) return focusFirst($, ["filter"]);
+  if (await readState($, "search")) return focusFirst($, ["filter"]);
   await focusFirst($, [path && rowKey(baseName(path)), "filter"]);
 }
 
@@ -421,17 +648,17 @@ async function openLines($: EngineInterface, path: string) {
   if (lines.length > 1 && lines.at(-1) === "") lines.pop();
   previewLines = { path: target, lines };
   lastFind = -1;
-  await update($, anchorAtom, () => 0);
-  await update($, lineOffsetAtom, () => 0);
-  await update($, previewAtom, () => target);
+  await updateState($, "anchor", () => 0);
+  await updateState($, "lineOffset", () => 0);
+  await updateState($, "preview", () => target);
   await focusFirst($, [lineKey(1), "find"]);
 }
 
 async function closeLines($: EngineInterface) {
   const path = previewLines?.path;
   previewLines = undefined;
-  await update($, previewAtom, () => "");
-  await update($, anchorAtom, () => 0);
+  await updateState($, "preview", () => "");
+  await updateState($, "anchor", () => 0);
   await focusFirst($, [
     path && rowKey(baseName(path)),
     path && hitKey(path),
@@ -442,19 +669,19 @@ async function closeLines($: EngineInterface) {
 // Enter on a line: the first one starts a range, the second ends it and
 // puts `@file#Lstart-end` in the prompt.
 async function pressLine($: EngineInterface, n: number) {
-  const path = await read($, previewAtom);
-  const anchor = await read($, anchorAtom);
+  const path = await readState($, "preview");
+  const anchor = await readState($, "anchor");
   if (!anchor) {
-    await update($, anchorAtom, () => n);
+    await updateState($, "anchor", () => n);
     return $.ui.toast(`Range starts at line ${n}: Enter on the last line`);
   }
-  await update($, anchorAtom, () => 0);
+  await updateState($, "anchor", () => 0);
   return pick($, path, rangeOf(anchor, n));
 }
 
 async function findInLines($: EngineInterface, query: string) {
   if (!previewLines) return;
-  const offset = await read($, lineOffsetAtom);
+  const offset = await readState($, "lineOffset");
   const from = focusedKey.startsWith("line:")
     ? Number(focusedKey.slice(5)) - 1
     : lastFind >= 0
@@ -463,7 +690,7 @@ async function findInLines($: EngineInterface, query: string) {
   const index = findLine(previewLines.lines, query, from);
   if (index < 0) return $.ui.toast(`Not found: ${displayName(query)}`);
   lastFind = index;
-  await update($, lineOffsetAtom, () =>
+  await updateState($, "lineOffset", () =>
     windowAround(index, offset, lineRows, previewLines?.lines.length ?? 0),
   );
   await focusLine($, index + 1);
@@ -483,7 +710,7 @@ async function markFocused($: EngineInterface) {
   // A search result is always a file, named by its full path.
   if (focusedKey.startsWith("hit:")) {
     const path = focusedKey.slice(4);
-    return update($, markedAtom, (marks) => toggleMark(marks, path));
+    return updateState($, "marked", (marks) => toggleMark(marks, path));
   }
   if (!focusedKey.startsWith("row:") || focusedKey === PARENT_KEY)
     return $.ui.toast("Arrow onto a file first, then press m");
@@ -496,7 +723,7 @@ async function markFocused($: EngineInterface) {
     return $.ui.toast(
       "Folders can't be marked: open one and press a to add it",
     );
-  await update($, markedAtom, (marks) =>
+  await updateState($, "marked", (marks) =>
     toggleMark(marks, joinPath(dir, name)),
   );
 }
@@ -506,7 +733,7 @@ async function markFocused($: EngineInterface) {
 // whose name can't be mentioned safely, is skipped and named in the toast;
 // nothing is ever confirmed on the person's behalf.
 async function insertMarked($: EngineInterface) {
-  const marks = await read($, markedAtom);
+  const marks = await readState($, "marked");
   const cwd = await $.session.cwd();
   const mentions = new Set<string>();
   const skipped: string[] = [];
@@ -531,7 +758,7 @@ async function insertMarked($: EngineInterface) {
   }
   const skips = skipped.length ? `Skipped ${skipped.join(", ")}` : "";
   if (mentions.size === 0) {
-    await update($, markedAtom, () => []);
+    await updateState($, "marked", () => []);
     return $.ui.toast(`Nothing added. ${skips}`);
   }
   const filled = await $.prompt
@@ -540,7 +767,7 @@ async function insertMarked($: EngineInterface) {
   // The marks stay when the fill fails, so the person can try again.
   if (!filled.isFilled)
     return $.ui.toast("Could not add the marked files to the prompt");
-  await update($, markedAtom, () => []);
+  await updateState($, "marked", () => []);
   $.ui.toast(
     `Added ${mentions.size} ${mentions.size === 1 ? "file" : "files"}${skips ? `. ${skips}` : ""}`,
   );
@@ -558,15 +785,15 @@ export const register: Register = (on) => {
 
   on("command.run", { command: "files" }, async ($) => {
     // The filter box opens empty, so the list must too.
-    await update($, queryAtom, () => "");
+    await updateState($, "query", () => "");
     await clearConfirm($);
     // Reopening starts at the folder: a file shown before may have changed.
     previewLines = undefined;
     listing = undefined;
     project = undefined;
-    await update($, searchAtom, () => false);
-    await update($, previewAtom, () => "");
-    await update($, anchorAtom, () => 0);
+    await updateState($, "search", () => false);
+    await updateState($, "preview", () => "");
+    await updateState($, "anchor", () => 0);
     await $.ui.open({
       id: PANE,
       title: "Files",
@@ -591,7 +818,7 @@ export const register: Register = (on) => {
       const line = focusedKey.startsWith("line:")
         ? Number(focusedKey.slice(5))
         : 0;
-      await update($, focusLineAtom, () => line);
+      await updateState($, "focusLine", () => line);
     }
     return result;
   }).catch((_$, e, next) => next(e));
@@ -603,7 +830,7 @@ export const register: Register = (on) => {
     const { Box, Text, Button } = ui;
     const Input = "Input" in ui ? ui.Input : undefined;
     const cwd = await $.session.cwd();
-    const confirm = await read($, confirmAtom);
+    const confirm = await readState($, "confirm");
     const relative = (path: string) => {
       const under =
         path.startsWith(cwd) && /[\\/]/.test(path[cwd.length] ?? "");
@@ -613,7 +840,7 @@ export const register: Register = (on) => {
     };
 
     if (confirm) {
-      const action = await read($, confirmActionAtom);
+      const action = await readState($, "confirmAction");
       const yes = () =>
         action === "lines" ? openLines($, confirm) : openPath($, confirm);
       return (
@@ -651,19 +878,19 @@ export const register: Register = (on) => {
       );
     }
 
-    const preview = await read($, previewAtom);
+    const preview = await readState($, "preview");
     if (preview && previewLines?.path === preview) {
       lineRows = Math.max(
         1,
         e.props.scroll.bodyRows - LINES_CHROME_ROWS + saved,
       );
       const lines = previewLines.lines;
-      const anchor = await read($, anchorAtom);
-      const focusLine = await read($, focusLineAtom);
+      const anchor = await readState($, "anchor");
+      const focusLine = await readState($, "focusLine");
       const range =
         anchor && focusLine ? rangeOf(anchor, focusLine) : undefined;
       const offset = Math.min(
-        await read($, lineOffsetAtom),
+        await readState($, "lineOffset"),
         Math.max(0, lines.length - lineRows),
       );
       const gutter = String(lines.length).length;
@@ -671,7 +898,7 @@ export const register: Register = (on) => {
       const shown = lines.slice(offset, offset + lineRows);
       const below = lines.length - offset - shown.length;
       const page = (by: number) =>
-        update($, lineOffsetAtom, () =>
+        updateState($, "lineOffset", () =>
           Math.min(
             Math.max(0, offset + by),
             Math.max(0, lines.length - lineRows),
@@ -774,7 +1001,7 @@ export const register: Register = (on) => {
                 plain
                 hotkey="x"
                 dimColor
-                onPress={() => update($, anchorAtom, () => 0)}
+                onPress={() => updateState($, "anchor", () => 0)}
               >
                 clear start
               </Button>
@@ -789,9 +1016,9 @@ export const register: Register = (on) => {
       );
     }
 
-    const showHidden = await read($, hiddenAtom);
-    const query = await read($, queryAtom);
-    const marked = await read($, markedAtom);
+    const showHidden = await readState($, "showHidden");
+    const query = await readState($, "query");
+    const marked = await readState($, "marked");
     const markedSet = new Set(marked);
     const hiddenLabel = showHidden ? "hide hidden" : "hidden";
     const markLabels = [
@@ -807,18 +1034,18 @@ export const register: Register = (on) => {
         onPress={async () => {
           // The highlighted row may be about to vanish.
           focusedKey = "";
-          await update($, hiddenAtom, (v) => !v);
+          await updateState($, "showHidden", (v) => !v);
           // Hidden folders are only walked when hidden files show.
-          if (await read($, searchAtom)) await walkCwd($);
+          if (await readState($, "search")) await walkCwd($);
         }}
       >
         {hiddenLabel}
       </Button>
     );
 
-    if (await read($, searchAtom)) {
+    if (await readState($, "search")) {
       // Read so the pane redraws when the walk lands.
-      await read($, walkedAtom);
+      await readState($, "walked");
       const footerRows = wrappedRows(
         ["l: lines", "f: folders", `h: ${hiddenLabel}`, ...markLabels],
         e.props.bodyColumns,
@@ -830,14 +1057,14 @@ export const register: Register = (on) => {
       const walk = project?.walk;
       const hits = walk ? rankedHits(walk, query, showHidden) : [];
       const offset = Math.min(
-        await read($, offsetAtom),
+        await readState($, "offset"),
         Math.max(0, hits.length - listRows),
       );
       const shown = hits.slice(offset, offset + listRows);
       const below = hits.length - offset - shown.length;
       const top = hits[0];
       const page = (by: number) =>
-        update($, offsetAtom, () =>
+        updateState($, "offset", () =>
           Math.min(
             Math.max(0, offset + by),
             Math.max(0, hits.length - listRows),
@@ -877,13 +1104,13 @@ export const register: Register = (on) => {
                 submitLabel="add"
                 onInput={(value: string) =>
                   void (async () => {
-                    await update($, queryAtom, () => value);
-                    await update($, offsetAtom, () => 0);
+                    await updateState($, "query", () => value);
+                    await updateState($, "offset", () => 0);
                   })().catch(() => undefined)
                 }
                 onSubmit={() =>
                   void (async () => {
-                    await update($, queryAtom, () => "");
+                    await updateState($, "query", () => "");
                     if (top) await openPath($, top.path);
                   })().catch(() => undefined)
                 }
@@ -1002,7 +1229,7 @@ export const register: Register = (on) => {
     }
 
     const dir = await currentDir($);
-    const prevDir = await read($, prevDirAtom);
+    const prevDir = await readState($, "prevDir");
 
     let listed: Entry[];
     try {
@@ -1046,14 +1273,14 @@ export const register: Register = (on) => {
       isShown(entry.name, query, showHidden),
     ).length;
     const offset = Math.min(
-      await read($, offsetAtom),
+      await readState($, "offset"),
       Math.max(0, ranked.length - listRows),
     );
     const shown = ranked.slice(offset, offset + listRows);
     const below = ranked.length - offset - shown.length;
     const top = ranked[0];
     const page = (by: number) =>
-      update($, offsetAtom, () =>
+      updateState($, "offset", () =>
         Math.min(
           Math.max(0, offset + by),
           Math.max(0, ranked.length - listRows),
@@ -1063,13 +1290,13 @@ export const register: Register = (on) => {
     // Enter in the filter: a typed path jumps, otherwise the best match opens.
     // The box clears itself on Enter, so the query clears with it.
     const submit = async (typed: string) => {
-      await update($, queryAtom, () => "");
+      await updateState($, "query", () => "");
       if (pathMode) return openPath($, resolveTyped(dir, typed.trim()));
       if (top) return openPath($, joinPath(dir, top.name));
     };
     const filter = async (value: string) => {
-      await update($, queryAtom, () => value);
-      await update($, offsetAtom, () => 0);
+      await updateState($, "query", () => value);
+      await updateState($, "offset", () => 0);
     };
 
     return (
