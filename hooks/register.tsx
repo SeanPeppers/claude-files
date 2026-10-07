@@ -42,6 +42,12 @@ const MORE_BELOW = "more:below";
 // "more" rows, footer with its margin, hint.
 const LIST_CHROME_ROWS = 11;
 const LINES_CHROME_ROWS = 10;
+// A short pane (an inline band under the transcript reports about 11 rows)
+// can't fit that chrome plus a list, and a tree taller than the pane makes the
+// arrows scroll it. There the filter box loses its border, the footer its
+// margin and the hint line goes: 4 rows the list gets back.
+const COMPACT_BELOW_ROWS = 20;
+const COMPACT_SAVES_ROWS = 4;
 // '' means the session's working directory, resolved at draw time.
 const dirAtom = atom({ plugin: "file-picker", key: "dir" } as const, "");
 const prevDirAtom = atom(
@@ -591,6 +597,8 @@ export const register: Register = (on) => {
 
   on("ui.render", { component: "Pane", requestId: PANE }, async ($, e) => {
     const ui = $.ui.resolve(e);
+    const compact = e.props.scroll.bodyRows < COMPACT_BELOW_ROWS;
+    const saved = compact ? COMPACT_SAVES_ROWS : 0;
     const { Box, Text, Button } = ui;
     const Input = "Input" in ui ? ui.Input : undefined;
     const cwd = await $.session.cwd();
@@ -644,7 +652,10 @@ export const register: Register = (on) => {
 
     const preview = await read($, previewAtom);
     if (preview && previewLines?.path === preview) {
-      lineRows = Math.max(3, e.props.scroll.bodyRows - LINES_CHROME_ROWS);
+      lineRows = Math.max(
+        1,
+        e.props.scroll.bodyRows - LINES_CHROME_ROWS + saved,
+      );
       const lines = previewLines.lines;
       const anchor = await read($, anchorAtom);
       const focusLine = await read($, focusLineAtom);
@@ -687,7 +698,11 @@ export const register: Register = (on) => {
                 : "Enter on the first line of the range"}
           </Text>
           {Input && (
-            <Box borderStyle="round" borderColor="promptBorder" paddingX={1}>
+            <Box
+              borderStyle={compact ? undefined : "round"}
+              borderColor="promptBorder"
+              paddingX={compact ? 0 : 1}
+            >
               <Input
                 key="find"
                 placeholder="find text, Enter jumps to the next match"
@@ -741,7 +756,12 @@ export const register: Register = (on) => {
               {`↓ ${below} more`}
             </Button>
           )}
-          <Box flexDirection="row" flexWrap="wrap" columnGap={2} marginTop={1}>
+          <Box
+            flexDirection="row"
+            flexWrap="wrap"
+            columnGap={2}
+            marginTop={compact ? 0 : 1}
+          >
             <Button plain hotkey="f" dimColor onPress={() => closeLines($)}>
               files
             </Button>
@@ -759,9 +779,11 @@ export const register: Register = (on) => {
               </Button>
             )}
           </Box>
-          <Text dimColor wrap="truncate-end">
-            ↑↓ move · Enter start/end of range · Esc close
-          </Text>
+          {!compact && (
+            <Text dimColor wrap="truncate-end">
+              ↑↓ move · Enter start/end of range · Esc close
+            </Text>
+          )}
         </Box>
       );
     }
@@ -801,8 +823,8 @@ export const register: Register = (on) => {
         e.props.bodyColumns,
       );
       listRows = Math.max(
-        3,
-        e.props.scroll.bodyRows - LIST_CHROME_ROWS - (footerRows - 1),
+        1,
+        e.props.scroll.bodyRows - LIST_CHROME_ROWS - (footerRows - 1) + saved,
       );
       const walk = project?.walk;
       const hits = walk ? rankedHits(walk, query, showHidden) : [];
@@ -841,7 +863,11 @@ export const register: Register = (on) => {
             </Text>
           </Box>
           {Input && (
-            <Box borderStyle="round" borderColor="promptBorder" paddingX={1}>
+            <Box
+              borderStyle={compact ? undefined : "round"}
+              borderColor="promptBorder"
+              paddingX={compact ? 0 : 1}
+            >
               <Input
                 key="filter"
                 autoFocus
@@ -918,7 +944,12 @@ export const register: Register = (on) => {
               {`↓ ${below} more`}
             </Button>
           )}
-          <Box flexDirection="row" flexWrap="wrap" columnGap={2} marginTop={1}>
+          <Box
+            flexDirection="row"
+            flexWrap="wrap"
+            columnGap={2}
+            marginTop={compact ? 0 : 1}
+          >
             <Button
               key="lines"
               plain
@@ -959,9 +990,12 @@ export const register: Register = (on) => {
               </Button>
             )}
           </Box>
-          <Text dimColor wrap="truncate-end">
-            ↑↓ move · Enter add file · l lines · m mark · f folders · Esc close
-          </Text>
+          {!compact && (
+            <Text dimColor wrap="truncate-end">
+              ↑↓ move · Enter add file · l lines · m mark · f folders · Esc
+              close
+            </Text>
+          )}
         </Box>
       );
     }
@@ -1000,8 +1034,8 @@ export const register: Register = (on) => {
         e.props.bodyColumns,
       ) + wrappedRows(markLabels, e.props.bodyColumns);
     listRows = Math.max(
-      3,
-      e.props.scroll.bodyRows - LIST_CHROME_ROWS - (footerRows - 2),
+      1,
+      e.props.scroll.bodyRows - LIST_CHROME_ROWS - (footerRows - 2) + saved,
     );
     const pathMode = isPathQuery(query);
     const ranked = pathMode ? [] : rankEntries(listed, query, showHidden);
@@ -1048,7 +1082,11 @@ export const register: Register = (on) => {
           </Text>
         </Box>
         {Input && (
-          <Box borderStyle="round" borderColor="promptBorder" paddingX={1}>
+          <Box
+            borderStyle={compact ? undefined : "round"}
+            borderColor="promptBorder"
+            paddingX={compact ? 0 : 1}
+          >
             <Input
               key="filter"
               autoFocus
@@ -1132,7 +1170,12 @@ export const register: Register = (on) => {
             {`↓ ${below} more`}
           </Button>
         )}
-        <Box flexDirection="row" flexWrap="wrap" columnGap={2} marginTop={1}>
+        <Box
+          flexDirection="row"
+          flexWrap="wrap"
+          columnGap={2}
+          marginTop={compact ? 0 : 1}
+        >
           <Button
             key="lines"
             plain
@@ -1200,10 +1243,12 @@ export const register: Register = (on) => {
             </Button>
           )}
         </Box>
-        <Text dimColor wrap="truncate-end">
-          ↑↓ move · Enter add/open · l lines · m mark · s search project · Esc
-          close
-        </Text>
+        {!compact && (
+          <Text dimColor wrap="truncate-end">
+            ↑↓ move · Enter add/open · l lines · m mark · s search project · Esc
+            close
+          </Text>
+        )}
       </Box>
     );
   });
