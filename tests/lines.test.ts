@@ -194,6 +194,47 @@ test("the line view slides when the arrows reach the edge", async ($, on) => {
   await ui.unmount();
 });
 
+test("the lines between the start and the ring are highlighted", async ($, on) => {
+  const log = wire(on);
+  const ui = await mount($, "terminal");
+  await openLinesOf($, ui, "app.ts");
+  const ranged = /^\s*\d+ [┃▸] /;
+  // No start: moving the ring highlights nothing.
+  await arrowOnto($, "line:6");
+  expect(await ui.find({ text: ranged })).toBeUndefined();
+  expect(await ui.find({ text: /Enter on the first line/ })).toBeDefined();
+
+  await ui.press({ key: "line:3" });
+  await arrowOnto($, "line:6");
+  expect(await ui.find({ text: /^ 3 ▸ line 3$/ })).toBeDefined();
+  for (const n of [4, 5, 6])
+    expect(
+      await ui.find({ text: new RegExp(`^ ${n} ┃ line ${n}$`) }),
+    ).toBeDefined();
+  expect(await ui.find({ text: /^ 2 │ / })).toBeDefined();
+  expect(await ui.find({ text: /^ 7 │ / })).toBeDefined();
+  expect(
+    await ui.find({ text: "Lines 3–6 (4 lines): Enter to add, x to clear" }),
+  ).toBeDefined();
+
+  // Upward from the start works the same.
+  await arrowOnto($, "line:1");
+  expect(await ui.find({ text: /^ 1 ┃ / })).toBeDefined();
+  expect(await ui.find({ text: /^ 4 │ / })).toBeDefined();
+  expect(await ui.find({ text: /^Lines 1–3 \(3 lines\)/ })).toBeDefined();
+
+  await ui.press({ key: "clear start" });
+  expect(await ui.find({ text: ranged })).toBeUndefined();
+
+  await ui.press({ key: "line:2" });
+  await arrowOnto($, "line:5");
+  expect(await ui.find({ text: /^ 5 ┃ / })).toBeDefined();
+  await ui.press({ key: "line:5" });
+  expect(log.filled).toEqual(["@app.ts#L2-5 "]);
+  expect(await ui.find({ text: ranged })).toBeUndefined();
+  await ui.unmount();
+});
+
 test("line-range mentions", async () => {
   expect(mentionFor("/p/a.ts", "/p", { start: 3, end: 5 })).toBe("@a.ts#L3-5 ");
   expect(mentionFor("/p/a.ts", "/p", { start: 7, end: 7 })).toBe("@a.ts#L7 ");
