@@ -240,8 +240,12 @@ surfTest("dotfiles hidden, toggled, shown by '.' filter", async (s, $, on) => {
   expect((await names(ui)).sort()).toEqual(["row:.hidden", "row:a.txt"]);
   await ui.press({ key: "hidden" });
   expect(await names(ui)).toEqual(["row:a.txt"]);
+  expect(await ui.find({ type: "Text", text: "1" })).toBeDefined();
   await ui.input({ key: "filter", text: ".", kind: "change" });
   expect(await names(ui)).toContain("row:.hidden");
+  // The count goes by the rule the query shows rows by.
+  await ui.input({ key: "filter", text: ".h", kind: "change" });
+  expect(await ui.find({ type: "Text", text: "1/2" })).toBeDefined();
   await ui.unmount();
 });
 
