@@ -96,7 +96,7 @@ To update later: `claude plugin update file-picker@claude-files`.
 | `u` `b` `c` | up a folder, back to the last folder, back to the working directory |
 | `h` | show or hide hidden files: names starting with `.`, like `.env`, `.github` or `.gitignore` |
 | `a` | put the current folder in the prompt |
-| `m` on a file | mark or unmark it (`✓`); marks stay as you move between folders. Folders can't be marked (use `a`) |
+| `m` on a file | mark or unmark it (`✓`); marks stay as you move between folders and when you close and reopen `/files`. Folders can't be marked (use `a`) |
 | `i` | insert every marked file at once (`@src/a.ts @"my notes.md" @docs/b.md`) and clear the marks |
 | `s` | search the whole project (see below) |
 | `Esc` | close the pane |
@@ -105,7 +105,7 @@ To update later: `claude plugin update file-picker@claude-files`.
 
 | Key | Does |
 |---|---|
-| type | match file names anywhere under the working directory, shown as relative paths (`src/components/Button.tsx`); a name match ranks first, the path breaks ties, and `comp/btn` matches the path |
+| type | match file names anywhere under the working directory, shown as relative paths (`src/components/Button.tsx`); a name match ranks first, then the shorter name, then the closer path; `comp/btn` matches the path. With nothing typed, files are listed alphabetically by path |
 | `Enter` / `l` / `m` | add the file, pick its lines or mark it, exactly as in a folder |
 | `h` | include hidden folders and files (walks the project again) |
 | `f` | back to the folder list |
@@ -114,8 +114,9 @@ The project is walked once when you press `s`, one folder listing at a time,
 then every keystroke filters that list. It skips `.git`, `node_modules`,
 `.venv`, `venv`, `__pycache__`, `dist`, `build`, `target`, `.next` and hidden
 folders (unless hidden files are shown), never follows linked folders, and
-stops at 12 folder levels or 20,000 files; the pane says when it stopped
-early. Press `s` again from the folder list to see files added since.
+stops at 12 folder levels, 5,000 folders listed or 20,000 files; the pane
+says when it stopped early. Press `s` again from the folder list to see files
+added since.
 
 **Lines** (after `l`)
 
