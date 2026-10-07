@@ -336,3 +336,120 @@ export const toggleMark = (marks: readonly string[], path: string) =>
   marks.includes(path)
     ? marks.filter((mark) => mark !== path)
     : [...marks, path];
+
+// Cuts text to `width` cells from the start, so a long path keeps its file name.
+export const fitCellsStart = (text: string, width: number) =>
+  [...fitCells([...text].reverse().join(""), width)].reverse().join("");
+
+// Project search: one file found under the working directory, by its full
+// path and its `/`-separated path relative to the working directory.
+export type Hit = {
+  path: string;
+  rel: string;
+  name: string;
+  size: number;
+  isLink?: boolean;
+};
+
+// Folders a project search never walks into: version control, dependencies,
+// virtual environments, caches and build output.
+const SKIP_DIRS = new Set([
+  ".git",
+  "node_modules",
+  ".venv",
+  "venv",
+  "__pycache__",
+  "dist",
+  "build",
+  "target",
+  ".next",
+]);
+export const WALK_MAX_DEPTH = 12;
+export const WALK_MAX_FILES = 20_000;
+// Folders listed at once; the engine answers each list separately.
+const WALK_BATCH = 16;
+
+export type Walk = { hits: Hit[]; capped: boolean; deep: boolean };
+
+// Lists `root` and its subfolders breadth first, one folder per `list` call.
+// Links are found but never followed, so a linked folder can't loop or lead
+// out of the project. `capped`: stopped at `files`; `deep`: some folders were
+// past `depth` levels down. A folder that can't be listed is skipped.
+export const walkProject = async (
+  root: string,
+  list: (dir: string) => Promise<readonly Entry[]>,
+  showHidden: boolean,
+  limits = { depth: WALK_MAX_DEPTH, files: WALK_MAX_FILES },
+): Promise<Walk> => {
+  const hits: Hit[] = [];
+  let deep = false;
+  let level = [{ path: root, rel: "" }];
+  for (let depth = 1; level.length > 0; depth++) {
+    const next: typeof level = [];
+    for (let i = 0; i < level.length; i += WALK_BATCH) {
+      const batch = level.slice(i, i + WALK_BATCH);
+      const listed = await Promise.all(
+        batch.map((dir) => list(dir.path).catch((): Entry[] => [])),
+      );
+      for (const [j, dir] of batch.entries()) {
+        for (const entry of listed[j] ?? []) {
+          const path = joinPath(dir.path, entry.name);
+          const rel = dir.rel ? `${dir.rel}/${entry.name}` : entry.name;
+          if (entry.kind === "dir" && !entry.isLink) {
+            if (
+              SKIP_DIRS.has(entry.name) ||
+              (!showHidden && entry.name.startsWith("."))
+            )
+              continue;
+            if (depth >= limits.depth) deep = true;
+            else next.push({ path, rel });
+          } else if (entry.kind === "file" || entry.isLink) {
+            if (hits.length >= limits.files)
+              return { hits, capped: true, deep };
+            hits.push({
+              path,
+              rel,
+              name: entry.name,
+              size: entry.size,
+              isLink: entry.isLink,
+            });
+          }
+        }
+      }
+    }
+    level = next;
+  }
+  return { hits, capped: false, deep };
+};
+
+// Ranks found files by their name first; a query that only matches the path
+// (`comp/btn`) ranks after every name match. Ties go to the closer path match.
+export const rankHits = (
+  hits: readonly Hit[],
+  query: string,
+  showHidden: boolean,
+) =>
+  hits
+    .filter(
+      (hit) => showHidden || query.startsWith(".") || !hit.name.startsWith("."),
+    )
+    .map((hit) => {
+      const name = fuzzyScore(hit.name, query);
+      const path = fuzzyScore(hit.rel, query);
+      return {
+        hit,
+        score: name ?? (path === undefined ? undefined : 10_000 + path),
+        path: path ?? 0,
+      };
+    })
+    .filter(
+      (row): row is { hit: Hit; score: number; path: number } =>
+        row.score !== undefined,
+    )
+    .sort(
+      (a, b) =>
+        a.score - b.score ||
+        a.path - b.path ||
+        NAME_ORDER.compare(a.hit.rel, b.hit.rel),
+    )
+    .map((row) => row.hit);
