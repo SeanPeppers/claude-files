@@ -326,3 +326,18 @@ test("find goes to the next match each time Enter is pressed", async ($, on) => 
   expect(await ui.find({ key: "line:30" })).toBeDefined();
   await ui.unmount();
 });
+
+test("the range highlight follows the focus when the window slides", async ($, on) => {
+  wire(on);
+  const ui = await mount($, "terminal", 20);
+  await openLinesOf($, ui, "long.ts");
+  await ui.press({ key: "line:3" });
+  for (let i = 0; i < 30; i++) await arrowOnto($, "more:below");
+  let status = "";
+  for (let i = 0; i < 50 && !/Lines 3–/.test(status); i++)
+    status = (await ui.find({ text: /Lines 3–\d+/ }))?.text ?? "";
+  const shownLast = Number(/Lines 3–(\d+)/.exec(status)?.[1]);
+  expect(await ui.find({ key: `line:${shownLast}` })).toBeDefined();
+  expect(shownLast).toBeGreaterThan(20);
+  await ui.unmount();
+});
