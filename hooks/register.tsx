@@ -226,93 +226,99 @@ async function writeState<K extends keyof State>(
 ): Promise<boolean> {
   switch (key) {
     case "dir": {
-      const done = await $.state.set(DIR_STATE, value as State["dir"], {
+      const next = value as State["dir"];
+      const done = await $.state.set(DIR_STATE, next, {
         ifVersion: version,
       });
       return done.isSet;
     }
     case "prevDir": {
-      const done = await $.state.set(PREVDIR_STATE, value as State["prevDir"], {
+      const next = value as State["prevDir"];
+      const done = await $.state.set(PREVDIR_STATE, next, {
         ifVersion: version,
       });
       return done.isSet;
     }
     case "showHidden": {
-      const done = await $.state.set(
-        SHOWHIDDEN_STATE,
-        value as State["showHidden"],
-        { ifVersion: version },
-      );
+      const next = value as State["showHidden"];
+      const done = await $.state.set(SHOWHIDDEN_STATE, next, {
+        ifVersion: version,
+      });
       return done.isSet;
     }
     case "query": {
-      const done = await $.state.set(QUERY_STATE, value as State["query"], {
+      const next = value as State["query"];
+      const done = await $.state.set(QUERY_STATE, next, {
         ifVersion: version,
       });
       return done.isSet;
     }
     case "offset": {
-      const done = await $.state.set(OFFSET_STATE, value as State["offset"], {
+      const next = value as State["offset"];
+      const done = await $.state.set(OFFSET_STATE, next, {
         ifVersion: version,
       });
       return done.isSet;
     }
     case "preview": {
-      const done = await $.state.set(PREVIEW_STATE, value as State["preview"], {
+      const next = value as State["preview"];
+      const done = await $.state.set(PREVIEW_STATE, next, {
         ifVersion: version,
       });
       return done.isSet;
     }
     case "lineOffset": {
-      const done = await $.state.set(
-        LINEOFFSET_STATE,
-        value as State["lineOffset"],
-        { ifVersion: version },
-      );
+      const next = value as State["lineOffset"];
+      const done = await $.state.set(LINEOFFSET_STATE, next, {
+        ifVersion: version,
+      });
       return done.isSet;
     }
     case "anchor": {
-      const done = await $.state.set(ANCHOR_STATE, value as State["anchor"], {
+      const next = value as State["anchor"];
+      const done = await $.state.set(ANCHOR_STATE, next, {
         ifVersion: version,
       });
       return done.isSet;
     }
     case "focusLine": {
-      const done = await $.state.set(
-        FOCUSLINE_STATE,
-        value as State["focusLine"],
-        { ifVersion: version },
-      );
+      const next = value as State["focusLine"];
+      const done = await $.state.set(FOCUSLINE_STATE, next, {
+        ifVersion: version,
+      });
       return done.isSet;
     }
     case "confirm": {
-      const done = await $.state.set(CONFIRM_STATE, value as State["confirm"], {
+      const next = value as State["confirm"];
+      const done = await $.state.set(CONFIRM_STATE, next, {
         ifVersion: version,
       });
       return done.isSet;
     }
     case "confirmAction": {
-      const done = await $.state.set(
-        CONFIRMACTION_STATE,
-        value as State["confirmAction"],
-        { ifVersion: version },
-      );
+      const next = value as State["confirmAction"];
+      const done = await $.state.set(CONFIRMACTION_STATE, next, {
+        ifVersion: version,
+      });
       return done.isSet;
     }
     case "marked": {
-      const done = await $.state.set(MARKED_STATE, value as State["marked"], {
+      const next = value as State["marked"];
+      const done = await $.state.set(MARKED_STATE, next, {
         ifVersion: version,
       });
       return done.isSet;
     }
     case "search": {
-      const done = await $.state.set(SEARCH_STATE, value as State["search"], {
+      const next = value as State["search"];
+      const done = await $.state.set(SEARCH_STATE, next, {
         ifVersion: version,
       });
       return done.isSet;
     }
     case "walked": {
-      const done = await $.state.set(WALKED_STATE, value as State["walked"], {
+      const next = value as State["walked"];
+      const done = await $.state.set(WALKED_STATE, next, {
         ifVersion: version,
       });
       return done.isSet;
@@ -489,7 +495,7 @@ async function goTo($: EngineInterface, path: string) {
 // Puts the ring on line `n` and records it for the range highlight directly:
 // the focus event a slide raises arrives before the new rows are drawn, so the
 // hook can miss it and the highlight would lag a row or more behind.
-async function focusLine($: EngineInterface, n: number) {
+async function ringToLine($: EngineInterface, n: number) {
   focusedKey = lineKey(n);
   await updateState($, "focusLine", () => n);
   await focusFirst($, [lineKey(n)]);
@@ -512,7 +518,7 @@ async function slide($: EngineInterface, by: 1 | -1) {
     await updateState($, "lineOffset", () =>
       windowAround(index, offset, lineRows, total),
     );
-    return focusLine($, index + 1);
+    return ringToLine($, index + 1);
   }
   const query = await readState($, "query");
   const walk = project?.walk;
@@ -693,7 +699,7 @@ async function findInLines($: EngineInterface, query: string) {
   await updateState($, "lineOffset", () =>
     windowAround(index, offset, lineRows, previewLines?.lines.length ?? 0),
   );
-  await focusLine($, index + 1);
+  await ringToLine($, index + 1);
 }
 
 async function linesOfFocused($: EngineInterface) {
@@ -761,8 +767,9 @@ async function insertMarked($: EngineInterface) {
     await updateState($, "marked", () => []);
     return $.ui.toast(`Nothing added. ${skips}`);
   }
+  const text = [...mentions].join("");
   const filled = await $.prompt
-    .fill({ text: [...mentions].join(""), mode: "insert" })
+    .fill({ text, mode: "insert" })
     .catch(() => ({ isFilled: false }));
   // The marks stay when the fill fails, so the person can try again.
   if (!filled.isFilled)
