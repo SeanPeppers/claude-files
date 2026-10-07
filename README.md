@@ -201,8 +201,9 @@ claude plugin test .
 npx --yes @biomejs/biome@2.5.15 check --write .
 ```
 
-CI runs validation and tests on Linux, macOS and Windows, and Biome for lint
-and format.
+CI runs validation and tests on Linux, macOS and Windows, Biome for lint and
+format, and [zizmor](https://github.com/zizmorcore/zizmor) on the workflows;
+Dependabot keeps the pinned actions current.
 
 | File | What |
 |---|---|
