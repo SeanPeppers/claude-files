@@ -102,6 +102,28 @@ test("walk stops at the depth and file caps and says so", async () => {
   expect(capped.hits).toHaveLength(25);
 });
 
+test("walk stops at the folder cap and when aborted", async () => {
+  const wide: Record<string, Entry[]> = {
+    "/p": Array.from({ length: 40 }, (_, i) => folder(`d${i}`)),
+  };
+  for (let i = 0; i < 40; i++) wide[`/p/d${i}`] = [file(`f${i}.ts`)];
+  const { list, listed } = lister(wide);
+  const capped = await walkProject("/p", list, false, { folders: 20 });
+  expect(listed).toHaveLength(20);
+  expect(capped.foldersCapped).toBe(true);
+  expect(capped.hits).toHaveLength(19);
+  const all = await walkProject("/p", lister(wide).list, false);
+  expect(all.foldersCapped).toBe(false);
+  expect(all.hits).toHaveLength(40);
+
+  const stopped = lister(wide);
+  const walk = await walkProject("/p", stopped.list, false, {
+    aborted: () => stopped.listed.length > 0,
+  });
+  expect(stopped.listed).toEqual(["/p"]);
+  expect(walk.hits).toEqual([]);
+});
+
 const hit = (rel: string): Hit => ({
   path: `/p/${rel}`,
   rel,
@@ -216,8 +238,8 @@ const mount = ($: any) =>
   });
 
 // The walk runs after the key press; poll until the pane shows `query`.
-const until = async (ui: any, query: object) => {
-  for (let i = 0; i < 200; i++) if (await ui.find(query)) return true;
+const until = async (ui: any, query: object, tries = 200) => {
+  for (let i = 0; i < tries; i++) if (await ui.find(query)) return true;
   return false;
 };
 
@@ -282,6 +304,23 @@ test("search says when it stopped at the file cap", async ($, on) => {
   await ui.press({ key: "search" });
   expect(await until(ui, { text: /first 20,000 files/ })).toBe(true);
   expect(await ui.find({ text: "20000" })).toBeDefined();
+  await ui.unmount();
+});
+
+test("search says when it stopped at the folder cap", async ($, on) => {
+  const tree: Record<string, Entry[]> = {
+    "/p": Array.from({ length: 5_001 }, (_, i) => folder(`d${i}`)),
+  };
+  for (let i = 0; i < 5_001; i++) tree[`/p/d${i}`] = [];
+  const log = wire(on, tree);
+  const ui = await mount($);
+  await ui.press({ key: "search" });
+  // 5,000 folders take a while to list through the engine.
+  const ok = await until(ui, { text: /first 5,000 folders/ }, 5_000);
+  expect(ok).toBe(true);
+  // `/p` and d0 to d4998 make 5,000; the rest are never listed.
+  expect(log.listed).toContain("/p/d4998");
+  expect(log.listed).not.toContain("/p/d4999");
   await ui.unmount();
 });
 
