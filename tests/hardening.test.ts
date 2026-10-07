@@ -292,3 +292,50 @@ test("more secrets are recognised, source files are not", async () => {
   for (const path of ["/p/google/auth/credentials.py", "/p/creds.ts"])
     expect([path, isSecretPath(path)]).toEqual([path, false]);
 });
+
+test("a symlinked working directory (macOS /tmp) mentions project files relatively, without asking", async ($, on) => {
+  const filled: string[] = [];
+  on("session.cwd", () => ({ value: "/tmp/p" }));
+  on("fs.list", () => ({
+    value: [{ name: "a.ts", kind: "file", size: 1, mtimeMs: 0, isLink: false }],
+  }));
+  on("fs.stat", (_, e) => {
+    const path = posix(e.path) ?? "";
+    return {
+      value: {
+        kind: path === "/tmp/p" ? "dir" : "file",
+        size: 1,
+        mtimeMs: 0,
+        isLink: false,
+        realPath: path.replace(/^\/tmp\//, "/private/tmp/"),
+      },
+    };
+  });
+  on("ui.focus", () => ({}));
+  on("ui.toast", () => ({ value: undefined }));
+  on("prompt.fill", (_, e) => {
+    filled.push(e.text);
+    return { isFilled: true };
+  });
+  const ui = await $.ui.mount({
+    plugin: "file-picker",
+    surface: "terminal",
+    component: "Pane",
+    requestId: "file-picker",
+    props: {
+      title: "Files",
+      isFocused: true,
+      bodyColumns: 60,
+      placement: "dock",
+      scroll: { offset: 0, bodyRows: 30 },
+      view: {},
+    },
+  });
+  await ui.press({ key: "row:a.ts" });
+  expect(filled).toEqual(["@a.ts "]);
+  await ui.unmount();
+});
+
+test("fish keeps its history without a leading dot", async () => {
+  expect(isSecretPath("/h/.local/share/fish/fish_history")).toBe(true);
+});
