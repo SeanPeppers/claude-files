@@ -1,11 +1,12 @@
 import type { EngineInterface, Register } from "claude-code";
 import { atom, read, update } from "claude-code";
-import type { Entry, LineRange } from "./rank";
+import type { Entry, Hit, LineRange, Walk } from "./rank";
 import {
   baseName,
   displayName,
   findLine,
   fitCells,
+  fitCellsStart,
   humanSize,
   isBinaryText,
   isInside,
@@ -19,9 +20,13 @@ import {
   rangeLabel,
   rangeOf,
   rankEntries,
+  rankHits,
   relativeTo,
   resolveTyped,
   toggleMark,
+  WALK_MAX_DEPTH,
+  WALK_MAX_FILES,
+  walkProject,
   windowAround,
 } from "./rank";
 
@@ -76,6 +81,13 @@ const markedAtom = atom(
   { plugin: "file-picker", key: "marked" } as const,
   [] as string[],
 );
+// Whether the filter searches the whole project instead of the folder, and a
+// count bumped when a project walk finishes, so the pane redraws.
+const searchAtom = atom(
+  { plugin: "file-picker", key: "search" } as const,
+  false,
+);
+const walkedAtom = atom({ plugin: "file-picker", key: "walked" } as const, 0);
 
 // Rows of the list or of the file that fit in the pane, as last drawn. Both
 // are drawn a window at a time: a pane taller than its tree takes the arrows
@@ -94,6 +106,7 @@ const approved = new Set<string>();
 let confirmTarget: { real: string; escapes: boolean } | undefined;
 
 const rowKey = (name: string) => `row:${name}`;
+const hitKey = (path: string) => `hit:${path}`;
 const lineKey = (n: number) => `line:${n}`;
 
 async function currentDir($: EngineInterface) {
@@ -107,6 +120,48 @@ let listing: { dir: string; entries: Entry[] } | undefined;
 async function listDir($: EngineInterface, dir: string) {
   if (listing?.dir !== dir) listing = { dir, entries: await $.fs.list(dir) };
   return listing.entries;
+}
+
+// The project's files, walked once when search starts (or hidden files are
+// toggled during it), and the last ranking of them: ranking 20,000 paths on
+// every redraw would lag typing.
+let project: { walk?: Walk } | undefined;
+let ranking:
+  | { walk: Walk; query: string; hidden: boolean; hits: Hit[] }
+  | undefined;
+
+function rankedHits(walk: Walk, query: string, hidden: boolean) {
+  if (
+    ranking?.walk !== walk ||
+    ranking.query !== query ||
+    ranking.hidden !== hidden
+  )
+    ranking = { walk, query, hidden, hits: rankHits(walk.hits, query, hidden) };
+  return ranking.hits;
+}
+
+// Starts a fresh walk of the working directory; the pane shows "searching…"
+// until it lands. A walk started later wins over an older one still running.
+async function walkCwd($: EngineInterface) {
+  const showHidden = await read($, hiddenAtom);
+  const root = await $.session.cwd();
+  const current: { walk?: Walk } = {};
+  project = current;
+  focusedKey = "";
+  const walk = await walkProject(root, (dir) => $.fs.list(dir), showHidden);
+  if (project !== current) return;
+  current.walk = walk;
+  await update($, walkedAtom, (n) => n + 1);
+}
+
+async function setSearch($: EngineInterface, on: boolean) {
+  project = undefined;
+  focusedKey = "";
+  await update($, searchAtom, () => on);
+  await update($, queryAtom, () => "");
+  await update($, offsetAtom, () => 0);
+  if (on) void walkCwd($).catch(() => undefined);
+  await focusFirst($, ["filter"]);
 }
 
 async function rankedIn($: EngineInterface, dir: string, query: string) {
@@ -176,6 +231,9 @@ async function goTo($: EngineInterface, path: string) {
     : -1;
   await update($, prevDirAtom, () => from);
   await update($, dirAtom, () => path);
+  // A linked folder picked from a project search opens as a folder.
+  project = undefined;
+  await update($, searchAtom, () => false);
   await update($, queryAtom, () => "");
   await update($, offsetAtom, () =>
     childIndex < 0 ? 0 : windowAround(childIndex, 0, listRows, ranked.length),
@@ -215,22 +273,34 @@ async function slide($: EngineInterface, by: 1 | -1) {
     );
     return focusLine($, index + 1);
   }
-  const dir = await currentDir($);
-  const ranked = await rankedIn($, dir, await read($, queryAtom));
+  const query = await read($, queryAtom);
+  const walk = project?.walk;
+  const keys = (await read($, searchAtom))
+    ? walk
+      ? rankedHits(walk, query, await read($, hiddenAtom)).map((hit) =>
+          hitKey(hit.path),
+        )
+      : []
+    : (await rankedIn($, await currentDir($), query)).map((entry) =>
+        rowKey(entry.name),
+      );
   const offset = Math.min(
     await read($, offsetAtom),
-    Math.max(0, ranked.length - listRows),
+    Math.max(0, keys.length - listRows),
   );
-  const index = by > 0 ? offset + listRows : offset - 1;
-  const target = ranked[Math.min(Math.max(0, index), ranked.length - 1)];
+  const index = Math.min(
+    Math.max(0, by > 0 ? offset + listRows : offset - 1),
+    keys.length - 1,
+  );
+  const target = keys[index];
   if (!target) return;
   await update($, offsetAtom, () =>
-    windowAround(ranked.indexOf(target), offset, listRows, ranked.length),
+    windowAround(index, offset, listRows, keys.length),
   );
   // Recorded here too: the focus event a slide raises can arrive before the
   // new rows draw, and m or l would then act on the row left behind.
-  focusedKey = rowKey(target.name);
-  await focusFirst($, [rowKey(target.name)]);
+  focusedKey = target;
+  await focusFirst($, [target]);
 }
 
 async function pick($: EngineInterface, path: string, range?: LineRange) {
@@ -290,7 +360,11 @@ async function clearConfirm($: EngineInterface) {
 async function cancelConfirm($: EngineInterface) {
   const path = await read($, confirmAtom);
   await clearConfirm($);
-  await focusFirst($, [path && rowKey(baseName(path)), "filter"]);
+  await focusFirst($, [
+    path && rowKey(baseName(path)),
+    path && hitKey(path),
+    "filter",
+  ]);
 }
 
 // Folders open; regular files go into the prompt. A path that goes through a
@@ -346,7 +420,11 @@ async function closeLines($: EngineInterface) {
   previewLines = undefined;
   await update($, previewAtom, () => "");
   await update($, anchorAtom, () => 0);
-  await focusFirst($, [path && rowKey(baseName(path)), "filter"]);
+  await focusFirst($, [
+    path && rowKey(baseName(path)),
+    path && hitKey(path),
+    "filter",
+  ]);
 }
 
 // Enter on a line: the first one starts a range, the second ends it and
@@ -380,6 +458,7 @@ async function findInLines($: EngineInterface, query: string) {
 }
 
 async function linesOfFocused($: EngineInterface) {
+  if (focusedKey.startsWith("hit:")) return openLines($, focusedKey.slice(4));
   if (!focusedKey.startsWith("row:") || focusedKey === PARENT_KEY)
     return $.ui.toast("Arrow onto a file first, then press l");
   const dir = await currentDir($);
@@ -389,6 +468,11 @@ async function linesOfFocused($: EngineInterface) {
 // `m`: marks the highlighted file, or unmarks it. Folders aren't marked; `a`
 // adds the folder you're in.
 async function markFocused($: EngineInterface) {
+  // A search result is always a file, named by its full path.
+  if (focusedKey.startsWith("hit:")) {
+    const path = focusedKey.slice(4);
+    return update($, markedAtom, (marks) => toggleMark(marks, path));
+  }
   if (!focusedKey.startsWith("row:") || focusedKey === PARENT_KEY)
     return $.ui.toast("Arrow onto a file first, then press m");
   const dir = await currentDir($);
@@ -467,6 +551,8 @@ export const register: Register = (on) => {
     // Reopening starts at the folder: a file shown before may have changed.
     previewLines = undefined;
     listing = undefined;
+    project = undefined;
+    await update($, searchAtom, () => false);
     await update($, previewAtom, () => "");
     await update($, anchorAtom, () => 0);
     await $.ui.open({
@@ -675,12 +761,194 @@ export const register: Register = (on) => {
       );
     }
 
-    const dir = await currentDir($);
-    const prevDir = await read($, prevDirAtom);
     const showHidden = await read($, hiddenAtom);
     const query = await read($, queryAtom);
     const marked = await read($, markedAtom);
     const markedSet = new Set(marked);
+    const hiddenButton = (
+      <Button
+        key="hidden"
+        plain
+        hotkey="h"
+        dimColor
+        onPress={async () => {
+          // The highlighted row may be about to vanish.
+          focusedKey = "";
+          await update($, hiddenAtom, (v) => !v);
+          // Hidden folders are only walked when hidden files show.
+          if (await read($, searchAtom)) await walkCwd($);
+        }}
+      >
+        {showHidden ? "hide hidden" : "hidden"}
+      </Button>
+    );
+
+    if (await read($, searchAtom)) {
+      // Read so the pane redraws when the walk lands.
+      await read($, walkedAtom);
+      listRows = Math.max(3, e.props.scroll.bodyRows - LIST_CHROME_ROWS);
+      const walk = project?.walk;
+      const hits = walk ? rankedHits(walk, query, showHidden) : [];
+      const offset = Math.min(
+        await read($, offsetAtom),
+        Math.max(0, hits.length - listRows),
+      );
+      const shown = hits.slice(offset, offset + listRows);
+      const below = hits.length - offset - shown.length;
+      const top = hits[0];
+      const page = (by: number) =>
+        update($, offsetAtom, () =>
+          Math.min(
+            Math.max(0, offset + by),
+            Math.max(0, hits.length - listRows),
+          ),
+        );
+      const caps = [
+        walk?.capped && `first ${WALK_MAX_FILES.toLocaleString("en-US")} files`,
+        walk?.deep && `folders over ${WALK_MAX_DEPTH} levels deep skipped`,
+      ].filter(Boolean);
+      return (
+        <Box flexDirection="column">
+          <Box flexDirection="row" justifyContent="space-between">
+            <Text bold color="claude" wrap="truncate-start">
+              {`search ${relative(cwd)}`}
+            </Text>
+            <Text dimColor>
+              {!walk
+                ? ""
+                : query
+                  ? `${hits.length}/${walk.hits.length}`
+                  : `${walk.hits.length}`}
+            </Text>
+          </Box>
+          {Input && (
+            <Box borderStyle="round" borderColor="promptBorder" paddingX={1}>
+              <Input
+                key="filter"
+                autoFocus
+                placeholder="type a file name to search the whole project"
+                value={query}
+                submitLabel="add"
+                onInput={(value: string) =>
+                  void (async () => {
+                    await update($, queryAtom, () => value);
+                    await update($, offsetAtom, () => 0);
+                  })().catch(() => undefined)
+                }
+                onSubmit={() =>
+                  void (async () => {
+                    await update($, queryAtom, () => "");
+                    if (top) await openPath($, top.path);
+                  })().catch(() => undefined)
+                }
+              />
+            </Box>
+          )}
+          {caps.length > 0 && (
+            <Text color="warning" wrap="truncate-end">
+              {caps.join(" · ")}
+            </Text>
+          )}
+          {offset > 0 && (
+            <Button
+              key={MORE_ABOVE}
+              plain
+              dimColor
+              onPress={() => page(-listRows)}
+            >
+              {`↑ ${offset} more`}
+            </Button>
+          )}
+          {(!walk || hits.length === 0) && (
+            <Text dimColor italic>
+              {!walk
+                ? "searching…"
+                : query
+                  ? `no match for "${query}"`
+                  : "(no files)"}
+            </Text>
+          )}
+          {shown.map((hit, i) => (
+            <Box
+              key={`box:${hit.path}`}
+              flexDirection="row"
+              justifyContent="space-between"
+            >
+              <Button
+                key={hitKey(hit.path)}
+                plain
+                variant={offset + i === 0 && query ? "primary" : undefined}
+                dimColor
+                onPress={() => openPath($, hit.path)}
+              >
+                {fitCellsStart(
+                  `${markedSet.has(hit.path) ? "✓ " : ""}${displayName(hit.rel)}${hit.isLink ? " →" : ""}`,
+                  Math.max(10, e.props.bodyColumns - 8),
+                )}
+              </Button>
+              {!hit.isLink && <Text dimColor>{humanSize(hit.size)}</Text>}
+            </Box>
+          ))}
+          {below > 0 && (
+            <Button
+              key={MORE_BELOW}
+              plain
+              dimColor
+              onPress={() => page(listRows)}
+            >
+              {`↓ ${below} more`}
+            </Button>
+          )}
+          <Box flexDirection="row" gap={2} marginTop={1}>
+            <Button
+              key="lines"
+              plain
+              hotkey="l"
+              dimColor
+              onPress={() => linesOfFocused($)}
+            >
+              lines
+            </Button>
+            <Button
+              key="folders"
+              plain
+              hotkey="f"
+              dimColor
+              onPress={() => setSearch($, false)}
+            >
+              folders
+            </Button>
+            {hiddenButton}
+            <Button
+              key="mark"
+              plain
+              hotkey="m"
+              dimColor
+              onPress={() => markFocused($)}
+            >
+              mark
+            </Button>
+            {marked.length > 0 && (
+              <Button
+                key="insert"
+                plain
+                hotkey="i"
+                variant="primary"
+                onPress={() => insertMarked($)}
+              >
+                {`insert ${marked.length} marked`}
+              </Button>
+            )}
+          </Box>
+          <Text dimColor wrap="truncate-end">
+            ↑↓ move · Enter add file · l lines · m mark · f folders · Esc close
+          </Text>
+        </Box>
+      );
+    }
+
+    const dir = await currentDir($);
+    const prevDir = await read($, prevDirAtom);
 
     let listed: Entry[];
     try {
@@ -834,6 +1102,15 @@ export const register: Register = (on) => {
             lines
           </Button>
           <Button
+            key="search"
+            plain
+            hotkey="s"
+            dimColor
+            onPress={() => setSearch($, true)}
+          >
+            search project
+          </Button>
+          <Button
             plain
             hotkey="u"
             dimColor
@@ -849,19 +1126,7 @@ export const register: Register = (on) => {
           <Button plain hotkey="c" dimColor onPress={() => goTo($, cwd)}>
             cwd
           </Button>
-          <Button
-            key="hidden"
-            plain
-            hotkey="h"
-            dimColor
-            onPress={() => {
-              // The highlighted row may be about to vanish.
-              focusedKey = "";
-              return update($, hiddenAtom, (v) => !v);
-            }}
-          >
-            {showHidden ? "hide hidden" : "hidden"}
-          </Button>
+          {hiddenButton}
           <Button
             key="here"
             plain
@@ -895,7 +1160,7 @@ export const register: Register = (on) => {
           )}
         </Box>
         <Text dimColor wrap="truncate-end">
-          ↑↓ move · Enter add file/open folder · l pick lines · m mark · Esc
+          ↑↓ move · Enter add/open · l lines · m mark · s search project · Esc
           close
         </Text>
       </Box>
