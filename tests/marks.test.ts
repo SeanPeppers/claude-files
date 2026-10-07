@@ -11,7 +11,13 @@ const TREE: Record<string, string[]> = {
 };
 
 function wire(on: any) {
-  const log = { filled: [] as string[], toasts: [] as string[] };
+  const log = {
+    filled: [] as string[],
+    toasts: [] as string[],
+    // Whether prompt.fill fills; paths that became links, and their targets.
+    fills: true,
+    links: {} as Record<string, string>,
+  };
   const isDir = (path: string) => path in TREE;
   on("session.cwd", () => ({ value: ROOT }));
   on("fs.list", (_: any, e: any) => ({
@@ -36,7 +42,8 @@ function wire(on: any) {
         kind: isDir(path) ? "dir" : "file",
         size: 1,
         mtimeMs: 0,
-        isLink: false,
+        isLink: path in log.links,
+        realPath: log.links[path],
       },
     };
   });
@@ -46,8 +53,8 @@ function wire(on: any) {
     return { value: undefined };
   });
   on("prompt.fill", (_: any, e: any) => {
-    log.filled.push(e.text);
-    return { isFilled: true };
+    if (log.fills) log.filled.push(e.text);
+    return { isFilled: log.fills };
   });
   return log;
 }
@@ -142,6 +149,38 @@ for (const surface of SURFACES) {
     await mark($, ui, "a.ts");
     await ui.press({ key: "insert" });
     expect(log.filled.at(-1)).toBe("@.env @a.ts ");
+    await ui.unmount();
+  });
+
+  test(`i keeps the marks when the prompt can't be filled [${surface}]`, async ($, on) => {
+    const log = wire(on);
+    const ui = await mount($, surface);
+    await mark($, ui, "a.ts");
+    log.fills = false;
+    await ui.press({ key: "insert" });
+    expect(log.toasts.at(-1)).toBe(
+      "Could not add the marked files to the prompt",
+    );
+    expect(await ui.find({ text: /✓ a\.ts/ })).toBeDefined();
+    expect(await ui.find({ text: /insert 1 marked/ })).toBeDefined();
+    log.fills = true;
+    await ui.press({ key: "insert" });
+    expect(log.filled).toEqual(["@a.ts "]);
+    await ui.unmount();
+  });
+
+  test(`a marked file that became a link to a secret is skipped [${surface}]`, async ($, on) => {
+    const log = wire(on);
+    const ui = await mount($, surface);
+    await mark($, ui, "a.ts");
+    await mark($, ui, "my notes.md");
+    log.links["/p/a.ts"] = "/home/u/.ssh/id_ed25519";
+    await ui.press({ key: "insert" });
+    expect(log.filled).toEqual(['@"my notes.md" ']);
+    expect(log.toasts.at(-1)).toMatch(
+      /Skipped a\.ts \(looks like a secrets file/,
+    );
+    expect(await ui.find({ key: "confirm:yes" })).toBeUndefined();
     await ui.unmount();
   });
 }
