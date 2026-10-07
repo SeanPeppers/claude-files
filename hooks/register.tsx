@@ -13,6 +13,7 @@ import {
   isPathQuery,
   isRoot,
   isSecretPath,
+  isShown,
   joinPath,
   mentionFor,
   parentOf,
@@ -1004,10 +1005,11 @@ export const register: Register = (on) => {
     );
     const pathMode = isPathQuery(query);
     const ranked = pathMode ? [] : rankEntries(listed, query, showHidden);
-    // Hidden entries aren't shown, so they aren't counted either.
-    const shownCount = showHidden
-      ? listed.length
-      : listed.filter((entry) => !entry.name.startsWith(".")).length;
+    // Counted by the rule the ranking uses: hidden entries count only when
+    // they can show, as a query starting with `.` lets them.
+    const shownCount = listed.filter((entry) =>
+      isShown(entry.name, query, showHidden),
+    ).length;
     const offset = Math.min(
       await read($, offsetAtom),
       Math.max(0, ranked.length - listRows),

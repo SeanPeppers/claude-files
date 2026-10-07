@@ -139,16 +139,17 @@ const NAME_ORDER = new Intl.Collator(undefined, {
 
 const kindOrder = (entry: Entry) => (entry.kind === "dir" ? 0 : 1);
 
+// Hidden names show when hidden files are on, or for a query starting with `.`.
+export const isShown = (name: string, query: string, showHidden: boolean) =>
+  showHidden || query.startsWith(".") || !name.startsWith(".");
+
 export const rankEntries = <E extends Entry>(
   entries: readonly E[],
   query: string,
   showHidden: boolean,
 ) =>
   entries
-    .filter(
-      (entry) =>
-        showHidden || query.startsWith(".") || !entry.name.startsWith("."),
-    )
+    .filter((entry) => isShown(entry.name, query, showHidden))
     .map((entry) => ({ entry, score: fuzzyScore(entry.name, query) }))
     .filter(
       (row): row is { entry: E; score: number } => row.score !== undefined,
@@ -489,9 +490,7 @@ export const rankHits = (
   showHidden: boolean,
 ) =>
   hits
-    .filter(
-      (hit) => showHidden || query.startsWith(".") || !hit.name.startsWith("."),
-    )
+    .filter((hit) => isShown(hit.name, query, showHidden))
     .map((hit) => {
       const name = fuzzyScore(hit.name, query);
       const path = fuzzyScore(hit.rel, query);
