@@ -330,3 +330,9 @@ export const relativeTo = (path: string, root: string) => {
   const prefix = sepsOf(root).test(root.slice(-1)) ? root : root + sepOf(root);
   return path.startsWith(prefix) ? path.slice(prefix.length) : "";
 };
+
+// Marks a path, or unmarks it if it was marked, keeping the marking order.
+export const toggleMark = (marks: readonly string[], path: string) =>
+  marks.includes(path)
+    ? marks.filter((mark) => mark !== path)
+    : [...marks, path];

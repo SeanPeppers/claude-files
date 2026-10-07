@@ -21,6 +21,7 @@ import {
   rankEntries,
   relativeTo,
   resolveTyped,
+  toggleMark,
   windowAround,
 } from "./rank";
 
@@ -29,9 +30,9 @@ const PARENT_KEY = "row:..";
 const MORE_ABOVE = "more:above";
 const MORE_BELOW = "more:below";
 // List: header, filter box (3), '..', the two "more" rows, footer with its
-// margin, hint. Lines: header, status, find box (3), the two "more" rows,
-// footer with its margin, hint.
-const LIST_CHROME_ROWS = 10;
+// margin, the marks row, hint. Lines: header, status, find box (3), the two
+// "more" rows, footer with its margin, hint.
+const LIST_CHROME_ROWS = 11;
 const LINES_CHROME_ROWS = 10;
 // '' means the session's working directory, resolved at draw time.
 const dirAtom = atom({ plugin: "file-picker", key: "dir" } as const, "");
@@ -69,6 +70,11 @@ const confirmAtom = atom(
 const confirmActionAtom = atom(
   { plugin: "file-picker", key: "confirmAction" } as const,
   "",
+);
+// Files marked for one insert, by the row's path, across folders.
+const markedAtom = atom(
+  { plugin: "file-picker", key: "marked" } as const,
+  [] as string[],
 );
 
 // Rows of the list or of the file that fit in the pane, as last drawn. Both
@@ -244,14 +250,17 @@ async function pick($: EngineInterface, path: string, range?: LineRange) {
 // second yes before it is added or shown. Both the row's own path and where it
 // really leads are checked; once confirmed, it isn't asked about again this
 // session.
+const needsConfirm = (row: string, file: { real: string; escapes: boolean }) =>
+  (isSecretPath(row) || isSecretPath(file.real) || file.escapes) &&
+  !approved.has(file.real);
+
 async function confirmFirst(
   $: EngineInterface,
   row: string,
   file: { real: string; escapes: boolean },
   action: "add" | "lines",
 ) {
-  const risky = isSecretPath(row) || isSecretPath(file.real) || file.escapes;
-  if (!risky || approved.has(file.real)) return false;
+  if (!needsConfirm(row, file)) return false;
   // The yes approves only the file the screen named: a link retargeted in
   // between shows the confirm again, with the new target.
   if (
@@ -372,6 +381,66 @@ async function linesOfFocused($: EngineInterface) {
     return $.ui.toast("Arrow onto a file first, then press l");
   const dir = await currentDir($);
   return openLines($, joinPath(dir, focusedKey.slice(4)));
+}
+
+// `m`: marks the highlighted file, or unmarks it. Folders aren't marked; `a`
+// adds the folder you're in.
+async function markFocused($: EngineInterface) {
+  if (!focusedKey.startsWith("row:") || focusedKey === PARENT_KEY)
+    return $.ui.toast("Arrow onto a file first, then press m");
+  const dir = await currentDir($);
+  const name = focusedKey.slice(4);
+  const entry = (await listDir($, dir).catch((): Entry[] => [])).find(
+    (listed) => listed.name === name,
+  );
+  if (entry?.kind === "dir")
+    return $.ui.toast(
+      "Folders can't be marked: open one and press a to add it",
+    );
+  await update($, markedAtom, (marks) =>
+    toggleMark(marks, joinPath(dir, name)),
+  );
+}
+
+// `i`: every marked file goes through the checks a single pick does, and the
+// ones that pass go in with one fill. A file that would need a second yes, or
+// whose name can't be mentioned safely, is skipped and named in the toast;
+// nothing is ever confirmed on the person's behalf.
+async function insertMarked($: EngineInterface) {
+  const marks = await read($, markedAtom);
+  const cwd = await $.session.cwd();
+  const mentions = new Set<string>();
+  const skipped: string[] = [];
+  for (const path of marks) {
+    const name = displayName(baseName(path));
+    const file = await resolveFile($, path);
+    if (file?.stat.kind !== "file") {
+      skipped.push(`${name} (no longer a file)`);
+      continue;
+    }
+    if (needsConfirm(path, file)) {
+      skipped.push(`${name} (needs a yes: press Enter on it)`);
+      continue;
+    }
+    const mention = mentionFor(file.mentionPath, cwd);
+    if (mention) mentions.add(mention);
+    else skipped.push(`${name} (name can't be mentioned safely)`);
+  }
+  const skips = skipped.length ? `Skipped ${skipped.join(", ")}` : "";
+  if (mentions.size === 0) {
+    await update($, markedAtom, () => []);
+    return $.ui.toast(`Nothing added. ${skips}`);
+  }
+  const filled = await $.prompt
+    .fill({ text: [...mentions].join(""), mode: "insert" })
+    .catch(() => ({ isFilled: false }));
+  // The marks stay when the fill fails, so the person can try again.
+  if (!filled.isFilled)
+    return $.ui.toast("Could not add the marked files to the prompt");
+  await update($, markedAtom, () => []);
+  $.ui.toast(
+    `Added ${mentions.size} ${mentions.size === 1 ? "file" : "files"}${skips ? `. ${skips}` : ""}`,
+  );
 }
 
 export const register: Register = (on) => {
@@ -603,6 +672,8 @@ export const register: Register = (on) => {
     const prevDir = await read($, prevDirAtom);
     const showHidden = await read($, hiddenAtom);
     const query = await read($, queryAtom);
+    const marked = await read($, markedAtom);
+    const markedSet = new Set(marked);
 
     let listed: Entry[];
     try {
@@ -725,7 +796,7 @@ export const register: Register = (on) => {
                 onPress={() => openPath($, joinPath(dir, entry.name))}
               >
                 {fitCells(
-                  `${displayName(entry.name)}${isDir ? "/" : ""}${entry.isLink ? " →" : ""}`,
+                  `${markedSet.has(joinPath(dir, entry.name)) ? "✓ " : ""}${displayName(entry.name)}${isDir ? "/" : ""}${entry.isLink ? " →" : ""}`,
                   Math.max(10, e.props.bodyColumns - 8),
                 )}
               </Button>
@@ -788,8 +859,31 @@ export const register: Register = (on) => {
             @ this folder
           </Button>
         </Box>
+        <Box flexDirection="row" gap={2}>
+          <Button
+            key="mark"
+            plain
+            hotkey="m"
+            dimColor
+            onPress={() => markFocused($)}
+          >
+            mark file
+          </Button>
+          {marked.length > 0 && (
+            <Button
+              key="insert"
+              plain
+              hotkey="i"
+              variant="primary"
+              onPress={() => insertMarked($)}
+            >
+              {`insert ${marked.length} marked`}
+            </Button>
+          )}
+        </Box>
         <Text dimColor wrap="truncate-end">
-          ↑↓ move · Enter add file/open folder · l view & pick lines · Esc close
+          ↑↓ move · Enter add file/open folder · l pick lines · m mark · Esc
+          close
         </Text>
       </Box>
     );
