@@ -2,6 +2,7 @@ import { expect, test } from "claude-code/testing";
 
 import type { Entry, Hit } from "../hooks/rank";
 import { fitCellsStart, rankHits, walkProject } from "../hooks/rank";
+import { posix } from "./posix";
 
 const file = (name: string): Entry => ({ name, kind: "file", size: 1 });
 const folder = (name: string): Entry => ({ name, kind: "dir", size: 0 });
@@ -139,4 +140,153 @@ test("long paths are cut from the start, keeping the file name", async () => {
   expect(fitCellsStart("src/components/Button.tsx", 12)).toBe("…/Button.tsx");
   expect(fitCellsStart("short.ts", 12)).toBe("short.ts");
   expect(fitCellsStart("漢字/漢字.ts", 8)).toBe("…漢字.ts");
+});
+
+// The pane, searching a fake project through `fs.list` mocks.
+const ROOT = "/p";
+const TREE: Record<string, Entry[]> = {
+  "/p": [
+    folder("src"),
+    folder("node_modules"),
+    folder(".git"),
+    folder("config"),
+    link("elsewhere"),
+    file("README.md"),
+  ],
+  "/p/src": [folder("components")],
+  "/p/src/components": [file("Button.tsx")],
+  "/p/node_modules": [file("Button.tsx")],
+  "/p/.git": [file("HEAD")],
+  "/p/config": [file(".env")],
+  "/p/elsewhere": [file("outside.ts")],
+};
+
+function wire(on: any, tree: Record<string, Entry[]>) {
+  const log = { filled: [] as string[], listed: [] as string[] };
+  on("session.cwd", () => ({ value: ROOT }));
+  on("fs.list", (_: any, e: any) => {
+    const path = posix(e.path) ?? ROOT;
+    log.listed.push(path);
+    const entries = tree[path];
+    if (!entries) throw new Error("ENOENT");
+    return {
+      value: entries.map((x) => ({ mtimeMs: 0, isLink: false, ...x })),
+    };
+  });
+  on("fs.stat", (_: any, e: any) => {
+    const path = posix(e.path) ?? "";
+    return {
+      value: {
+        kind: path in tree ? "dir" : "file",
+        size: 1,
+        mtimeMs: 0,
+        isLink: false,
+      },
+    };
+  });
+  on("fs.read", () => ({ value: "one\ntwo\n" }));
+  on("ui.focus", () => ({ value: {} }));
+  on("ui.toast", () => ({ value: undefined }));
+  on("prompt.fill", (_: any, e: any) => {
+    log.filled.push(e.text);
+    return { isFilled: true };
+  });
+  return log;
+}
+
+const mount = ($: any) =>
+  $.ui.mount({
+    plugin: "file-picker",
+    surface: "terminal",
+    component: "Pane",
+    requestId: "file-picker",
+    props: {
+      title: "Files",
+      isFocused: true,
+      bodyColumns: 80,
+      placement: "dock",
+      scroll: { offset: 0, bodyRows: 30 },
+      view: {},
+    },
+  });
+
+// The walk runs after the key press; poll until the pane shows `query`.
+const until = async (ui: any, query: object) => {
+  for (let i = 0; i < 200; i++) if (await ui.find(query)) return true;
+  return false;
+};
+
+test("s searches the project: deep files, skipped folders, Enter and l", async ($, on) => {
+  const log = wire(on, TREE);
+  const ui = await mount($);
+  await ui.press({ key: "search" });
+  const button = { key: "hit:/p/src/components/Button.tsx" };
+  expect(await until(ui, button)).toBe(true);
+  expect(await ui.find({ text: /src\/components\/Button\.tsx/ })).toBeDefined();
+  expect(await ui.find({ key: "hit:/p/elsewhere" })).toBeDefined();
+  expect(log.listed).not.toContain("/p/node_modules");
+  expect(log.listed).not.toContain("/p/.git");
+  expect(log.listed).not.toContain("/p/elsewhere");
+
+  await ui.input({ key: "filter", text: "butt", kind: "change" });
+  expect(await ui.find({ key: "hit:/p/README.md" })).toBeUndefined();
+  await ui.input({ key: "filter", text: "butt" });
+  expect(log.filled).toEqual(["@src/components/Button.tsx "]);
+  await ui.press(button);
+  expect(log.filled.at(-1)).toBe("@src/components/Button.tsx ");
+
+  await $.ui.focus({
+    component: "Pane",
+    requestId: "file-picker",
+    plugin: "file-picker",
+    element: button.key,
+    origin: { kind: "person" },
+  });
+  await ui.press({ key: "lines" });
+  await ui.press({ key: "line:2" });
+  await ui.press({ key: "line:2" });
+  expect(log.filled.at(-1)).toBe("@src/components/Button.tsx#L2 ");
+  await ui.press({ key: "files" });
+  expect(await ui.find(button)).toBeDefined();
+
+  await ui.press({ key: "folders" });
+  expect(await ui.find({ key: "row:src" })).toBeDefined();
+  await ui.unmount();
+});
+
+test("a secrets file found by search still needs a second yes", async ($, on) => {
+  const log = wire(on, TREE);
+  const ui = await mount($);
+  await ui.press({ key: "search" });
+  await ui.input({ key: "filter", text: ".env", kind: "change" });
+  const env = { key: "hit:/p/config/.env" };
+  expect(await until(ui, env)).toBe(true);
+  await ui.press(env);
+  expect(log.filled).toEqual([]);
+  expect(await ui.find({ text: /looks like a secrets file/ })).toBeDefined();
+  await ui.press({ key: "confirm:yes" });
+  expect(log.filled).toEqual(["@config/.env "]);
+  await ui.unmount();
+});
+
+test("search says when it stopped at the file cap", async ($, on) => {
+  wire(on, {
+    "/p": Array.from({ length: 20_001 }, (_, i) => file(`f${i}.ts`)),
+  });
+  const ui = await mount($);
+  await ui.press({ key: "search" });
+  expect(await until(ui, { text: /first 20,000 files/ })).toBe(true);
+  expect(await ui.find({ text: "20000" })).toBeDefined();
+  await ui.unmount();
+});
+
+test("search says when it stopped at the depth cap", async ($, on) => {
+  wire(on, deepTree(14));
+  const ui = await mount($);
+  await ui.press({ key: "search" });
+  expect(await until(ui, { text: /folders over 12 levels deep skipped/ })).toBe(
+    true,
+  );
+  expect(await ui.find({ text: /first 20,000/ })).toBeUndefined();
+  await ui.unmount();
 });

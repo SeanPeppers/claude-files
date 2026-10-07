@@ -13,6 +13,8 @@ declare module "claude-code" {
       confirm: string;
       confirmAction: string;
       marked: string[];
+      search: boolean;
+      walked: number;
     };
   }
 }
