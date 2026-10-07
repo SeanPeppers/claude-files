@@ -200,7 +200,13 @@ Edits reload while that session runs. Before sending a change:
 claude plugin validate --strict .
 claude plugin test .
 npx --yes @biomejs/biome@2.5.15 check --write .
+npx -p typescript@5 tsc -p .
 ```
+
+The type check uses the plugin API types Claude Code writes into the folder
+(git-ignored) the first time it loads it with `--plugin-dir`, so run that once
+first. CI doesn't type-check yet: Anthropic's published types lag behind the
+Claude Code version this plugin needs.
 
 CI runs validation and tests on Linux, macOS and Windows, Biome for lint and
 format, and [zizmor](https://github.com/zizmorcore/zizmor) on the workflows;
