@@ -1,7 +1,7 @@
 {
   "name": "file-picker",
   "displayName": "Claude Files",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "A file browser pane: Enter puts @path in your prompt, l picks exact lines (@file#L12-30)",
   "author": {
     "name": "SeanPeppers"

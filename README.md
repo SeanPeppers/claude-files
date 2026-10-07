@@ -123,6 +123,8 @@ always `/`, which Windows accepts too.
 is added the keyboard goes back to the prompt so you can keep typing; click the
 pane or press `ctrl+x` then `Tab` to return.
 
+The folder is listed when you open it; reopen `/files` to see files added since.
+
 ## Safety
 
 What the plugin does: it lists folders, reads a file **only when you press `l`
@@ -139,24 +141,27 @@ the GitHub CLI's `hosts.yml`) and anything inside `.ssh`, `.aws`, `.gnupg`,
 `.kube` or `.docker`, the pane asks before adding the file (its contents would
 go to Claude) or showing its lines (they'd be on your screen, and lines you pick
 go to Claude). Say yes once and that file isn't asked about again this session.
-Templates like `.env.example` and public keys (`.pub`) aren't flagged, and
-neither is a link named innocently that leads to one of these: both the link and
-its target are checked.
+Templates like `.env.example` and public keys (`.pub`) aren't flagged. The check
+looks at where a path really leads, not just its name, so an innocently named
+link (or a file inside a linked folder) that ends up at a secret is caught too.
 
 Filenames and file contents come from whatever you browse, including repos you
 just cloned, so they're treated as untrusted:
 
 - **No prompt injection through names.** A name with a `"` or a control
-  character (newline, tab, escape codes, bidi overrides) could close the quotes
-  and slip a second `@file` or extra instructions into your prompt, so it's
-  never inserted. You get a toast instead.
+  character (newline, line separator, tab, escape codes, bidi overrides) could
+  close the quotes and slip a second `@file` or extra instructions into your
+  prompt, so it's never inserted. On Linux and macOS neither is a name holding
+  `\`, which is an ordinary character there: turned into a path separator it
+  would point the mention somewhere else. You get a toast instead.
 - **No terminal tricks.** Those characters are drawn as `�`, in names and in
   file lines alike, so nothing can break the pane, color your terminal or
   disguise itself.
-- **No disguised links.** Symlinks are marked `→`, and picking one inserts the
-  path it really leads to: a `docs/setup.md` that points at
-  `~/private/diary.md` shows up as exactly that. Dangling links, devices and
-  pipes are refused.
+- **No disguised links.** Symlinks are marked `→`. Picking a file inserts the
+  path it really leads to, following links anywhere on the way, so a
+  `docs/setup.md` that points at `~/private/diary.md` shows up as exactly
+  that. A file that looks like it's in the project but leads out of it asks
+  first, and names the real file. Dangling links, devices and pipes are refused.
 
 Found a security problem? Please report it privately, as [SECURITY.md](SECURITY.md)
 describes; for anything else, open an issue.
