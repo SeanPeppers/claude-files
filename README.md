@@ -146,11 +146,11 @@ pane or press `ctrl+x` then `Tab` to return.
 
 The folder is listed when you open it; reopen `/files` to see files added since.
 
-**Pane size.** The pane needs about 40 columns and 10 rows. In a narrow or short
-pane (such as the band under the transcript in a terminal under ~110 columns)
-it switches to a compact layout, and below that size the arrow keys may scroll
-the pane instead of moving between rows: widen the terminal or drag the pane
-edge to give it room.
+**Pane size.** A pane under 20 rows (such as the band under the transcript in a
+terminal under ~110 columns) uses a compact layout, and a narrow pane wraps the
+footer buttons. Below about 40 columns by 10 rows the arrow keys may scroll the
+pane instead of moving between rows: widen the terminal or drag the pane edge
+to give it room.
 
 ## Safety
 
