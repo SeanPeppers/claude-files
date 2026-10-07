@@ -198,9 +198,11 @@ Edits reload while that session runs. Before sending a change:
 ```
 claude plugin validate --strict .
 claude plugin test .
+npx --yes @biomejs/biome@2.5.15 check --write .
 ```
 
-CI runs validation and tests on Linux, macOS and Windows.
+CI runs validation and tests on Linux, macOS and Windows, and Biome for lint
+and format.
 
 | File | What |
 |---|---|
