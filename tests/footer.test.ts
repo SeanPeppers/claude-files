@@ -47,70 +47,87 @@ const heightOf = (node: Node, columns: number): number => {
   return frame + Math.max(0, ...kids.map((kid) => heightOf(kid, columns)));
 };
 
-const COLUMNS = 40;
-const BODY_ROWS = 20;
 const NAMES = Array.from(
   { length: 60 },
   (_, i) => `f${String(i).padStart(2, "0")}.ts`,
 );
 
-test("a narrow pane's wrapped footers stay within the body", async ($, on) => {
-  on("session.cwd", () => ({ value: "/p" }));
-  on("fs.list", (_: any, e: any) => {
-    const dir = posix(e.path);
-    if (dir !== "/p") throw new Error("ENOENT");
-    return {
-      value: NAMES.map((name) => ({
-        name,
-        kind: "file",
-        size: 1,
-        mtimeMs: 0,
-        isLink: false,
-      })),
-    };
-  });
-  on("fs.stat", () => ({
-    value: { kind: "file", size: 1, mtimeMs: 0, isLink: false },
-  }));
-  on("ui.focus", () => ({}));
-  on("ui.toast", () => ({ value: undefined }));
-  const ui = await $.ui.mount({
-    plugin: "file-picker",
-    surface: "terminal",
-    component: "Pane",
-    requestId: "file-picker",
-    props: {
-      title: "Files",
-      isFocused: true,
-      bodyColumns: COLUMNS,
-      placement: "dock",
-      scroll: { offset: 0, bodyRows: BODY_ROWS },
-      view: {},
-    },
-  });
-  const focus = (element: string) =>
-    $.ui.focus({
+// Wide and narrow docks, and the short inline band (compact layout); below
+// about 9 rows at 40 columns even one list row can't fit.
+for (const [COLUMNS, BODY_ROWS] of [
+  [40, 20],
+  [40, 11],
+  [40, 9],
+  [90, 11],
+] as const)
+  test(`list, search and lines stay within ${BODY_ROWS} rows at ${COLUMNS} columns`, async ($, on) => {
+    on("session.cwd", () => ({ value: "/p" }));
+    on("fs.list", (_: any, e: any) => {
+      const dir = posix(e.path);
+      if (dir !== "/p") throw new Error("ENOENT");
+      return {
+        value: NAMES.map((name) => ({
+          name,
+          kind: "file",
+          size: 1,
+          mtimeMs: 0,
+          isLink: false,
+        })),
+      };
+    });
+    on("fs.read", () => ({
+      value: Array.from({ length: 80 }, (_, i) => `line ${i + 1}`).join("\n"),
+    }));
+    on("fs.stat", () => ({
+      value: { kind: "file", size: 1, mtimeMs: 0, isLink: false },
+    }));
+    on("ui.focus", () => ({}));
+    on("ui.toast", () => ({ value: undefined }));
+    const ui = await $.ui.mount({
+      plugin: "file-picker",
+      surface: "terminal",
       component: "Pane",
       requestId: "file-picker",
-      plugin: "file-picker",
-      element,
-      origin: { kind: "person" },
+      props: {
+        title: "Files",
+        isFocused: true,
+        bodyColumns: COLUMNS,
+        placement: "dock",
+        scroll: { offset: 0, bodyRows: BODY_ROWS },
+        view: {},
+      },
     });
-  await focus("row:f00.ts");
-  await ui.press({ key: "mark" });
-  // Page down so both "more" rows show: the tallest the list view gets.
-  await ui.press({ key: "more:below" });
-  expect(await ui.find({ key: "more:above" })).toBeDefined();
-  expect(await ui.find({ key: "more:below" })).toBeDefined();
-  expect(heightOf(await ui.drawn(), COLUMNS)).toBeLessThanOrEqual(BODY_ROWS);
+    const focus = (element: string) =>
+      $.ui.focus({
+        component: "Pane",
+        requestId: "file-picker",
+        plugin: "file-picker",
+        element,
+        origin: { kind: "person" },
+      });
+    await focus("row:f00.ts");
+    await ui.press({ key: "mark" });
+    // Page down so both "more" rows show: the tallest the list view gets.
+    await ui.press({ key: "more:below" });
+    expect(await ui.find({ key: "more:above" })).toBeDefined();
+    expect(await ui.find({ key: "more:below" })).toBeDefined();
+    expect(heightOf(await ui.drawn(), COLUMNS)).toBeLessThanOrEqual(BODY_ROWS);
 
-  await ui.press({ key: "search" });
-  let landed = false;
-  for (let i = 0; i < 200 && !landed; i++)
-    landed = (await ui.find({ key: "hit:/p/f00.ts" })) !== undefined;
-  expect(landed).toBe(true);
-  await ui.press({ key: "more:below" });
-  expect(await ui.find({ key: "more:above" })).toBeDefined();
-  expect(heightOf(await ui.drawn(), COLUMNS)).toBeLessThanOrEqual(BODY_ROWS);
-  await ui.unmount();
-});
+    await focus("row:f01.ts");
+    await ui.press({ key: "lines" });
+    expect(await ui.find({ key: "line:1" })).toBeDefined();
+    await ui.press({ key: "line:1" });
+    await ui.press({ key: "more:below" });
+    expect(heightOf(await ui.drawn(), COLUMNS)).toBeLessThanOrEqual(BODY_ROWS);
+    await ui.press({ key: "files" });
+
+    await ui.press({ key: "search" });
+    let landed = false;
+    for (let i = 0; i < 200 && !landed; i++)
+      landed = (await ui.find({ key: "hit:/p/f00.ts" })) !== undefined;
+    expect(landed).toBe(true);
+    await ui.press({ key: "more:below" });
+    expect(await ui.find({ key: "more:above" })).toBeDefined();
+    expect(heightOf(await ui.drawn(), COLUMNS)).toBeLessThanOrEqual(BODY_ROWS);
+    await ui.unmount();
+  });
