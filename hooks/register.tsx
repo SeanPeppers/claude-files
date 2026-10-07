@@ -886,9 +886,8 @@ export const register: Register = (on) => {
       );
       const lines = previewLines.lines;
       const anchor = await readState($, "anchor");
-      const focusLine = await readState($, "focusLine");
-      const range =
-        anchor && focusLine ? rangeOf(anchor, focusLine) : undefined;
+      const ringLine = await readState($, "focusLine");
+      const range = anchor && ringLine ? rangeOf(anchor, ringLine) : undefined;
       const offset = Math.min(
         await readState($, "lineOffset"),
         Math.max(0, lines.length - lineRows),
