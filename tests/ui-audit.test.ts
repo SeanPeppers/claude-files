@@ -320,10 +320,10 @@ surfTest("back after two navigations, cwd, @ this folder", async (s, $, on) => {
   await ui.press({ key: "cwd" });
   expect(await ui.find({ key: "row:a" })).toBeDefined();
   await ui.press({ key: "row:a" });
-  await ui.press({ key: "@ this folder" });
+  await ui.press({ key: "here" });
   expect(log.filled).toEqual(["@a "]);
   await ui.press({ key: "cwd" });
-  await ui.press({ key: "@ this folder" });
+  await ui.press({ key: "here" });
   // at cwd itself: mention is the absolute path
   expect(log.filled[1]).toBeDefined();
   await ui.unmount();
@@ -357,7 +357,7 @@ test("root: up button and @ this folder at /", async ($, on) => {
   const ui = await mount($, "terminal");
   await ui.press({ key: "up" });
   expect(await ui.find({ key: "row:etc" })).toBeDefined();
-  await ui.press({ key: "@ this folder" });
+  await ui.press({ key: "here" });
   expect(log.filled.length).toBe(1);
   await ui.unmount();
 });
