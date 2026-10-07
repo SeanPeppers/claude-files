@@ -24,7 +24,8 @@ test("names that could inject into the prompt are refused, not mentioned", async
 test("mentions quote anything the parser could split or misread", async () => {
   const cwd = "/p";
   expect(mentionFor("/p/with space.txt", cwd)).toBe('@"with space.txt" ');
-  expect(mentionFor("/p/notes#L1-5", cwd)).toBe('@"notes#L1-5" ');
+  expect(mentionFor("/p/notes#L1-5", cwd)).toBeUndefined();
+  expect(mentionFor("/p/notes#1.md", cwd)).toBe('@"notes#1.md" ');
   expect(mentionFor("/p/at@sign.txt", cwd)).toBe('@"at@sign.txt" ');
   expect(mentionFor("/p/it's.md", cwd)).toBe(`@"it's.md" `);
   expect(mentionFor("/p/plain.ts", cwd)).toBe("@plain.ts ");

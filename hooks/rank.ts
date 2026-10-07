@@ -71,7 +71,9 @@ export const displayName = (name: string) =>
 export type LineRange = { start: number; end: number };
 
 export const mentionFor = (path: string, cwd: string, range?: LineRange) => {
-  if (path.includes('"') || CONTROL.test(path)) return undefined;
+  // A name holding `#L5` would itself be read as a line range.
+  if (path.includes('"') || CONTROL.test(path) || /#L\d/i.test(path))
+    return undefined;
   const prefix = SEP.test(cwd.slice(-1)) ? cwd : cwd + sepOf(cwd);
   const rel =
     path.startsWith(prefix) && path.length > prefix.length
@@ -178,28 +180,68 @@ export const windowAround = (
 // Names that usually hold secrets. Checked on the whole path so a file inside
 // ~/.ssh or ~/.aws counts too; templates such as .env.example do not.
 const SECRET_NAMES = [
-  /^\.env(\..+)?$/i,
-  /\.(pem|key|p12|pfx|jks|keystore|kdbx|gpg|asc)$/i,
-  /^id_(rsa|dsa|ecdsa|ed25519)$/i,
-  /^(\.netrc|\.npmrc|\.pypirc|\.git-credentials|\.htpasswd|kaggle\.json)$/i,
-  /^(credentials|secrets?|tokens?|service[-_]?account[^/\\]*)(\.(json|ya?ml|toml|ini|env|txt))?$/i,
+  /^\.env(rc)?(\..+)?$/i,
+  /\.(pem|key|p12|pfx|jks|keystore|kdbx|gpg|ppk)$/i,
+  /^id_(rsa|dsa|ecdsa|ed25519)([-_.].*)?$/i,
+  /^(\.netrc|\.npmrc|\.pypirc|\.pgpass|\.git-credentials|\.htpasswd|kaggle\.json)$/i,
+  /(^|[-_])credentials(\.(json|ya?ml|toml|ini|txt))?$/i,
+  /^(secrets?|token)(\.(json|ya?ml|toml|ini|env|txt))?$/i,
+  /^service[-_]?account[^/\\]*\.json$/i,
 ];
 const SECRET_DIRS = /(^|[\\/])\.(ssh|aws|gnupg|kube|docker)[\\/]/i;
-const TEMPLATE = /\.(example|sample|template|dist)$/i;
+const SECRET_PATHS = /[\\/]gh[\\/]hosts\.ya?ml$/i;
+// Templates and public halves of key pairs hold nothing secret.
+const NOT_SECRET = /\.(example|sample|template|dist|pub)$/i;
 
 export const isSecretPath = (path: string) => {
   const name = baseName(path);
-  if (TEMPLATE.test(name)) return false;
-  return SECRET_DIRS.test(path) || SECRET_NAMES.some((re) => re.test(name));
+  if (NOT_SECRET.test(name)) return false;
+  return (
+    SECRET_DIRS.test(path) ||
+    SECRET_PATHS.test(path) ||
+    SECRET_NAMES.some((re) => re.test(name))
+  );
+};
+
+// Terminal cells a code point takes: East Asian wide and fullwidth characters
+// and most emoji take two. A row wider than the pane wraps onto a second row,
+// and a window of rows taller than the pane makes the arrows scroll it.
+const cellsOf = (code: number) =>
+  (code >= 0x1100 && code <= 0x115f) ||
+  (code >= 0x2e80 && code <= 0xa4cf) ||
+  (code >= 0xac00 && code <= 0xd7a3) ||
+  (code >= 0xf900 && code <= 0xfaff) ||
+  (code >= 0xfe30 && code <= 0xfe4f) ||
+  (code >= 0xff00 && code <= 0xff60) ||
+  (code >= 0xffe0 && code <= 0xffe6) ||
+  (code >= 0x1f300 && code <= 0x1faff) ||
+  (code >= 0x20000 && code <= 0x3fffd)
+    ? 2
+    : 1;
+
+// Cuts text to `width` terminal cells, by whole code points, ending with … when cut.
+export const fitCells = (text: string, width: number) => {
+  let used = 0;
+  let out = "";
+  for (const ch of text) {
+    const cells = cellsOf(ch.codePointAt(0) ?? 0);
+    if (used + cells > width) {
+      while (used + 1 > width && out) {
+        const last = [...out].pop() ?? "";
+        out = out.slice(0, -last.length);
+        used -= cellsOf(last.codePointAt(0) ?? 0);
+      }
+      return `${out}…`;
+    }
+    used += cells;
+    out += ch;
+  }
+  return out;
 };
 
 // One preview row: tabs as two spaces, unsafe characters as �, cut to width.
-export const previewLine = (text: string, width: number) => {
-  const flat = displayName(text.replace(/\t/g, "  ").replace(/\r$/, ""));
-  return flat.length > width
-    ? `${flat.slice(0, Math.max(0, width - 1))}…`
-    : flat;
-};
+export const previewLine = (text: string, width: number) =>
+  fitCells(displayName(text.replace(/\t/g, "  ").replace(/\r$/, "")), width);
 
 // A file the preview won't draw: NUL bytes mean binary.
 export const isBinaryText = (text: string) => text.includes("\u0000");
