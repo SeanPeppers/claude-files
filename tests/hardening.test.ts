@@ -1,9 +1,11 @@
 import { expect, test } from "claude-code/testing";
 import {
+  baseName,
   displayName,
   humanSize,
   isPathQuery,
   isRoot,
+  isSecretPath,
   joinPath,
   mentionFor,
   parentOf,
@@ -180,7 +182,14 @@ test("hostile names draw, refuse to mention, and links mention their target", as
     await ui.press({ key: 'row:x" @private.txt "y' });
     expect(filled).toEqual([]);
     expect(toasts.filter((t) => t.startsWith("Not added"))).toHaveLength(2);
+    // A link out of the project asks first, then mentions where it leads;
+    // approved on the first surface, it is not asked about again.
     await ui.press({ key: "row:setup.md" });
+    if (surface === "terminal") {
+      expect(filled).toEqual([]);
+      expect(await ui.find({ text: /leads out of the project/ })).toBeDefined();
+      await ui.press({ key: "confirm:yes" });
+    }
     expect(filled).toEqual(["@/home/u/private/diary.md "]);
     await ui.unmount();
   }
@@ -190,4 +199,96 @@ test("a leading // is POSIX, not a Windows share", async () => {
   expect(isRoot("//mnt/nfs")).toBe(false);
   expect(parentOf("//mnt/nfs")).toBe("/mnt");
   expect(resolveTyped("/home/u", "//mnt/nfs/x")).toBe("/mnt/nfs/x");
+});
+
+test("a backslash in a POSIX name can't turn into a path that escapes", async () => {
+  expect(mentionFor("/p/docs\\..\\..\\etc\\passwd", "/p")).toBeUndefined();
+  expect(mentionFor("C:\\p\\src\\a.ts", "C:\\p")).toBe("@src/a.ts ");
+  expect(baseName("/p/a\\b.txt")).toBe("a\\b.txt");
+  expect(joinPath("/p/a\\b", "c")).toBe("/p/a\\b/c");
+  expect(parentOf("/p/a\\b")).toBe("/p");
+});
+
+test("line and paragraph separators count as control characters", async () => {
+  expect(mentionFor("/p/a\u2028SYSTEM.md", "/p")).toBeUndefined();
+  expect(displayName("a\u2029b")).toBe("a\uFFFDb");
+});
+
+test("a link in a parent folder is followed: secrets and escapes are caught", async ($, on) => {
+  const filled: string[] = [];
+  on("session.cwd", () => ({ value: "/p" }));
+  on("fs.list", (_, e) => ({
+    value:
+      posix(e.path) === "/p/k8s"
+        ? [{ name: "config", kind: "file", size: 1, mtimeMs: 0, isLink: false }]
+        : [{ name: "k8s", kind: "other", size: 0, mtimeMs: 0, isLink: true }],
+  }));
+  on("fs.stat", (_, e) => {
+    const path = posix(e.path);
+    if (path === "/p/k8s")
+      return {
+        value: {
+          kind: "dir",
+          size: 0,
+          mtimeMs: 0,
+          isLink: true,
+          realPath: "/home/u/.kube",
+        },
+      };
+    if (path === "/p/k8s/config")
+      return {
+        value: {
+          kind: "file",
+          size: 1,
+          mtimeMs: 0,
+          isLink: false,
+          realPath: "/home/u/.kube/config",
+        },
+      };
+    return { value: { kind: "dir", size: 0, mtimeMs: 0, isLink: false } };
+  });
+  on("ui.focus", () => ({}));
+  on("ui.toast", () => ({ value: undefined }));
+  on("prompt.fill", (_, e) => {
+    filled.push(e.text);
+    return { isFilled: true };
+  });
+  const ui = await $.ui.mount({
+    plugin: "file-picker",
+    surface: "terminal",
+    component: "Pane",
+    requestId: "file-picker",
+    props: {
+      title: "Files",
+      isFocused: true,
+      bodyColumns: 60,
+      placement: "dock",
+      scroll: { offset: 0, bodyRows: 30 },
+      view: {},
+    },
+  });
+  await ui.press({ key: "row:k8s" });
+  await ui.press({ key: "row:config" });
+  expect(filled).toEqual([]);
+  expect(await ui.find({ text: /looks like a secrets file/ })).toBeDefined();
+  expect(await ui.find({ text: /\/home\/u\/\.kube\/config/ })).toBeDefined();
+  await ui.unmount();
+});
+
+test("more secrets are recognised, source files are not", async () => {
+  for (const path of [
+    "/h/.claude/.credentials.json",
+    "/h/.config/sops/age/keys.txt",
+    "/h/.config/gcloud/credentials.db",
+    "/h/.vault-token",
+    "/h/.terraform.d/credentials.tfrc.json",
+    "/h/.s3cfg",
+    "/h/.my.cnf",
+    "/h/.config/rclone/rclone.conf",
+    "/h/.bash_history",
+    "/proc/123/environ",
+  ])
+    expect([path, isSecretPath(path)]).toEqual([path, true]);
+  for (const path of ["/p/google/auth/credentials.py", "/p/creds.ts"])
+    expect([path, isSecretPath(path)]).toEqual([path, false]);
 });

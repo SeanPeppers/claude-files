@@ -8,6 +8,7 @@ import {
   fitCells,
   humanSize,
   isBinaryText,
+  isInside,
   isPathQuery,
   isRoot,
   isSecretPath,
@@ -16,6 +17,7 @@ import {
   parentOf,
   previewLine,
   rankEntries,
+  relativeTo,
   resolveTyped,
   windowAround,
 } from "./rank";
@@ -75,6 +77,8 @@ let previewLines: { path: string; lines: string[] } | undefined;
 let lastFind = -1;
 // Secrets-looking files already confirmed this session, by resolved path.
 const approved = new Set<string>();
+// What the confirm screen is asking about: where the row really leads.
+let confirmTarget: { real: string; escapes: boolean } | undefined;
 
 const rowKey = (name: string) => `row:${name}`;
 const lineKey = (n: number) => `line:${n}`;
@@ -83,13 +87,45 @@ async function currentDir($: EngineInterface) {
   return (await read($, dirAtom)) || (await $.session.cwd());
 }
 
+// The folder's listing, kept until the folder changes or /files reopens:
+// listing and sorting a large folder on every keystroke froze the pane.
+let listing: { dir: string; entries: Entry[] } | undefined;
+
+async function listDir($: EngineInterface, dir: string) {
+  if (listing?.dir !== dir) listing = { dir, entries: await $.fs.list(dir) };
+  return listing.entries;
+}
+
 async function rankedIn($: EngineInterface, dir: string, query: string) {
-  const listed: Entry[] = await $.fs.list(dir).catch(() => []);
+  const listed = await listDir($, dir).catch((): Entry[] => []);
+  return isPathQuery(query)
+    ? []
+    : rankEntries(listed, query, await read($, hiddenAtom));
+}
+
+// Where a picked path really leads, following links in any folder on the way,
+// and the path to mention for it: relative when the real file is inside the
+// project, its real absolute path when not. `escapes` marks a path that looks
+// like it's in the project but leads out of it.
+async function resolveFile($: EngineInterface, path: string) {
+  const stat = await $.fs.stat(path, { resolve: true }).catch(() => undefined);
+  if (!stat) return undefined;
+  const real = stat.realPath ?? path;
+  const cwd = await $.session.cwd();
+  const realCwd =
+    (await $.fs.stat(cwd, { resolve: true }).catch(() => undefined))
+      ?.realPath ?? cwd;
+  const inProject = isInside(real, realCwd);
   return {
-    listed,
-    ranked: isPathQuery(query)
-      ? []
-      : rankEntries(listed, query, await read($, hiddenAtom)),
+    stat,
+    real,
+    mentionPath:
+      real === path
+        ? path
+        : inProject
+          ? joinPath(cwd, relativeTo(real, realCwd))
+          : real,
+    escapes: real !== path && isInside(path, cwd) && !inProject,
   };
 }
 
@@ -114,7 +150,11 @@ async function goTo($: EngineInterface, path: string) {
   const from = await currentDir($);
   if (path === from) return;
   const child = parentOf(from) === path ? baseName(from) : undefined;
-  const { ranked } = await rankedIn($, path, "");
+  // The new folder's rows replace the old; a stale name would make `l` open
+  // a same-named file here.
+  focusedKey = "";
+  listing = undefined;
+  const ranked = await rankedIn($, path, "");
   const childIndex = child
     ? ranked.findIndex((entry) => entry.name === child)
     : -1;
@@ -151,7 +191,7 @@ async function slide($: EngineInterface, by: 1 | -1) {
     return focusFirst($, [lineKey(index + 1)]);
   }
   const dir = await currentDir($);
-  const { ranked } = await rankedIn($, dir, await read($, queryAtom));
+  const ranked = await rankedIn($, dir, await read($, queryAtom));
   const offset = Math.min(
     await read($, offsetAtom),
     Math.max(0, ranked.length - listRows),
@@ -181,21 +221,23 @@ async function pick($: EngineInterface, path: string, range?: LineRange) {
   );
 }
 
-// A secrets-looking file needs a second yes before it is added or shown.
-// Both the row's own path and where a link leads are checked; once confirmed,
-// the file isn't asked about again this session.
+// A secrets-looking file, or a link that leads out of the project, needs a
+// second yes before it is added or shown. Both the row's own path and where it
+// really leads are checked; once confirmed, it isn't asked about again this
+// session.
 async function confirmFirst(
   $: EngineInterface,
   row: string,
-  target: string,
+  file: { real: string; escapes: boolean },
   action: "add" | "lines",
 ) {
-  if (!(isSecretPath(row) || isSecretPath(target)) || approved.has(target))
-    return false;
+  const risky = isSecretPath(row) || isSecretPath(file.real) || file.escapes;
+  if (!risky || approved.has(file.real)) return false;
   if ((await read($, confirmAtom)) === row) {
-    approved.add(target);
+    approved.add(file.real);
     return false;
   }
+  confirmTarget = file;
   await update($, confirmAtom, () => row);
   await update($, confirmActionAtom, () => action);
   await focusFirst($, ["confirm:no"]);
@@ -215,35 +257,35 @@ async function cancelConfirm($: EngineInterface) {
   await focusFirst($, [path && rowKey(baseName(path)), "filter"]);
 }
 
-// Folders open; regular files go into the prompt. A link is mentioned by
-// where it leads, so a link disguised as a project file (say, to a private
-// file outside the project) shows its real target before anything is sent.
+// Folders open; regular files go into the prompt. A path that goes through a
+// link is mentioned by where it really leads, so a link disguised as a project
+// file (say, to a private file outside the project) shows its real target
+// before anything is sent.
 async function openPath($: EngineInterface, path: string) {
-  const stat = await $.fs.stat(path, { resolve: true }).catch(() => undefined);
-  if (!stat || stat.kind === "other")
+  const file = await resolveFile($, path);
+  if (!file || file.stat.kind === "other")
     return $.ui.toast(
-      stat
+      file
         ? `Not a regular file: ${displayName(path)}`
         : `No such path: ${displayName(path)}`,
     );
-  if (stat.kind === "dir") return goTo($, path);
-  const target = stat.isLink && stat.realPath ? stat.realPath : path;
-  if (await confirmFirst($, path, target, "add")) return;
+  if (file.stat.kind === "dir") return goTo($, path);
+  if (await confirmFirst($, path, file, "add")) return;
   await clearConfirm($);
-  return pick($, target);
+  return pick($, file.mentionPath);
 }
 
 // Opens a file line by line, so a range of it can be picked.
 async function openLines($: EngineInterface, path: string) {
-  const stat = await $.fs.stat(path, { resolve: true }).catch(() => undefined);
-  if (stat?.kind !== "file")
+  const file = await resolveFile($, path);
+  if (file?.stat.kind !== "file")
     return $.ui.toast(`Only files open line by line: ${displayName(path)}`);
-  const target = stat.isLink && stat.realPath ? stat.realPath : path;
-  if (await confirmFirst($, path, target, "lines")) return;
+  if (await confirmFirst($, path, file, "lines")) return;
   await clearConfirm($);
+  const target = file.mentionPath;
   let text: string;
   try {
-    text = await $.fs.read(target);
+    text = await $.fs.read(file.real);
   } catch {
     return $.ui.toast(
       `Can't show ${displayName(baseName(target))} line by line (unreadable or over 4 MiB); Enter adds the whole file`,
@@ -327,6 +369,7 @@ export const register: Register = (on) => {
     await clearConfirm($);
     // Reopening starts at the folder: a file shown before may have changed.
     previewLines = undefined;
+    listing = undefined;
     await update($, previewAtom, () => "");
     await update($, anchorAtom, () => 0);
     await $.ui.open({
@@ -373,8 +416,15 @@ export const register: Register = (on) => {
       return (
         <Box flexDirection="column" gap={1}>
           <Text color="warning" bold>
-            {`⚠ ${relative(confirm)} looks like a secrets file`}
+            {confirmTarget?.escapes &&
+            !isSecretPath(confirm) &&
+            !isSecretPath(confirmTarget.real)
+              ? `⚠ ${relative(confirm)} is a link that leads out of the project`
+              : `⚠ ${relative(confirm)} looks like a secrets file`}
           </Text>
+          {confirmTarget && confirmTarget.real !== confirm && (
+            <Text>{`It really opens ${displayName(confirmTarget.real)}`}</Text>
+          )}
           <Text>
             {action === "lines"
               ? "Its contents would be shown here, and any lines you pick are sent to Claude with your prompt."
@@ -517,7 +567,7 @@ export const register: Register = (on) => {
 
     let listed: Entry[];
     try {
-      listed = await $.fs.list(dir);
+      listed = await listDir($, dir);
     } catch (err) {
       return (
         <Box flexDirection="column" gap={1}>
