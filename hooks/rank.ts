@@ -157,6 +157,9 @@ export const rankEntries = <E extends Entry>(
       (a, b) =>
         a.score - b.score ||
         kindOrder(a.entry) - kindOrder(b.entry) ||
+        // Among equal matches the closer name wins: `button` → Button.tsx
+        // before button.test.tsx. Unfiltered, the list stays alphabetical.
+        (query ? a.entry.name.length - b.entry.name.length : 0) ||
         NAME_ORDER.compare(a.entry.name, b.entry.name),
     )
     .map((row) => row.entry);
@@ -449,6 +452,7 @@ export const rankHits = (
     .sort(
       (a, b) =>
         a.score - b.score ||
+        a.hit.name.length - b.hit.name.length ||
         a.path - b.path ||
         NAME_ORDER.compare(a.hit.rel, b.hit.rel),
     )
