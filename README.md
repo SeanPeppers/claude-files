@@ -248,6 +248,7 @@ Dependabot keeps the pinned actions current.
 | `hooks/rank.ts` | pure helpers: ranking, the project walk, paths, mentions, secrets check, the list window |
 | `types/index.d.ts` | the session state the pane keeps |
 | `tests/` | unit, hardening (hostile names, Windows paths), line view, project search and UI tests |
+| `CHANGELOG.md` | what changed in each version |
 
 One design note, since it isn't obvious: a pane whose content is taller than
 the pane takes the arrow keys to scroll, which stops them moving between rows.
