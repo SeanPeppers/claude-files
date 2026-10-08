@@ -17,6 +17,8 @@ declare module "claude-code" {
       walked: number;
       recentView: boolean;
       recent: { path: string; rel: string; name: string; size: number }[];
+      peek: boolean;
+      peeked: number;
     };
   }
 }
