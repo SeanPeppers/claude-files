@@ -10,15 +10,21 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `r` in the folder list shows the last 10 files you added to the prompt from
   this working directory, newest first, kept between sessions in the
-  plugin's own store (`$.store`). Enter, `l` and `m` work on them as on any
-  file, the filter narrows them, deleted files drop out, and secrets files
-  still ask first. README "Safety" says what is stored.
-- `p` previews the highlighted file under the folder list or the search
-  results: its first lines, read once the arrows rest on it. It is off until
-  you press `p` and stays on for the session. Secrets files are never
-  previewed (even after a yes), nor binary files, links that lead out of the
-  project or files over 64 KiB; each gets a one-line notice instead. The
-  preview shows only in a pane of at least 20 rows and 40 columns.
+  plugin's own store (`$.store`). Enter, `l`, `m` and `p` work on them as
+  on any file, the filter narrows them, deleted files drop out, and secrets
+  files still ask first. README "Safety" says what is stored.
+- `p` previews the highlighted file under the folder list, the search
+  results or the recent files: its first lines, read once the arrows rest on
+  it. It is off until you press `p` and stays on for the session. Secrets
+  files are never previewed (even after a yes), nor binary files, links that
+  lead out of the project or files over 64 KiB; each gets a one-line notice
+  instead. The preview shows only in a pane of at least 20 rows and 40
+  columns.
+
+### Fixed
+
+- Back from the line view (`f`), `m` and `l` work on the file the ring is on
+  again instead of asking you to arrow onto a file first.
 
 ## [0.4.3] - 2026-10-07
 
