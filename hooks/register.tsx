@@ -824,9 +824,11 @@ async function closeLines($: EngineInterface) {
   previewLines = undefined;
   await updateState($, "preview", () => "");
   await updateState($, "anchor", () => 0);
+  // Only the key the list draws: the engine waits a while for one it doesn't.
+  const byPath =
+    (await readState($, "search")) || (await readState($, "recentView"));
   await focusFirst($, [
-    path && rowKey(baseName(path)),
-    path && hitKey(path),
+    path && (byPath ? hitKey(path) : rowKey(baseName(path))),
     "filter",
   ]);
 }
