@@ -268,7 +268,8 @@ the header row.
 
 What the plugin does: it lists folders (project search lists every folder under
 the working directory, within the limits above, and never opens a file), reads
-a file **only when you press `l` on it** (to draw its lines in the pane) **or,
+a file **only when you press `l` on it, or the next file you press after
+arming `lines`** (to draw its lines in the pane) **or,
 with the preview on, when the arrows rest on it** (to draw its first lines under
 the list), and inserts text into your prompt. The preview is off until you press
 `p`; it reads only files up to 64 KiB, and never reads a secrets file (below,
@@ -337,10 +338,10 @@ the changes. Either way no filter runs.
 Apart from those two git commands, the plugin runs nothing, never writes your
 files or touches the network, never reads your Claude Code settings, and
 nothing is sent until you press Enter on the prompt yourself. Arming `lines`
-or `mark` with a click or tap only changes what pressing a file does. It adds
-nothing to the prompt and skips none of the checks below. The Feedback
-links (`t`) are addresses on github.com: the plugin opens no connection, and
-the links open in your browser only when you click them.
+or `mark` with a click or tap adds nothing to the prompt and skips none of the
+checks below. The Feedback links (`t`) are addresses on github.com: the
+plugin opens no connection, and the links open in your browser only when you
+click them.
 
 **What it stores.** The full paths of the last 10 files you added to the
 prompt, per working directory (for `r`), secrets files included, and nothing
@@ -398,7 +399,7 @@ changes what Claude or its tools do; they only add the pane.
 Engine calls it makes: `$.command.register` (the `/files` command),
 `$.fs.list` and `$.fs.stat` (folder listings and file types; project search is `$.fs.list` alone, one folder per call; `r` checks each recent file still exists with `$.fs.stat`; `g` also stats `.git` in the working directory and each folder above it to find the repository root, then stats the git folder `git rev-parse` names), `$.fs.exists` (`g` checking that folder for `info/attributes`),
 `$.process.run` (only the two git commands above, only when you press `g`; their flags and `GIT_ATTR_NOSYSTEM` keep `.gitattributes` and the global and system attributes files from starting filters, and `status` doesn't run where the git folder holds `info/attributes`, as Safety explains),
-`$.fs.read` (the file you press `l` on, up to 4 MiB, and with the preview on,
+`$.fs.read` (the file you press `l` on, or the next file you press after arming `lines`, up to 4 MiB, and with the preview on,
 the highlighted file, up to 64 KiB), `$.clock.after` (waits 120 ms for the
 arrows to rest before the preview reads),
 `$.prompt.fill` (insert the mention), `$.session.cwd`, `$.session.version`
