@@ -223,3 +223,85 @@ test("git failing: too old, SHA-256, or its own first stderr line", async () => 
   );
   expect(gitFailNote(1, "  \n")).toBe("git status failed: exit 1");
 });
+
+test("parse: every unmerged pair stays, both-deleted and added-then-deleted go", async () => {
+  expect(
+    rels(
+      "DD bd.ts\0AU au.ts\0UD ud.ts\0UA ua.ts\0DU du.ts\0AA aa.ts\0UU uu.ts\0",
+    ),
+  ).toEqual([
+    "AU au.ts",
+    "UD ud.ts",
+    "UA ua.ts",
+    "DU du.ts",
+    "AA aa.ts",
+    "UU uu.ts",
+  ]);
+  // A nested repository shows as one untracked folder: nothing to mention.
+  expect(rels("?? vendor/inner/\0?? top.ts\0")).toEqual(["?? top.ts"]);
+});
+
+test("parse: tabs, carriage returns, a 4,096-character name and a bare NUL", async () => {
+  const long = `${"d/".repeat(1000)}${"x".repeat(2094)}`;
+  const hits = parseGitStatus(
+    "/r",
+    `?? a\tb\0?? c\r\0?? ${long}\0`,
+    false,
+  ).hits;
+  expect(hits.map((hit) => hit.rel)).toEqual(["a\tb", "c\r", long]);
+  expect(hits[2]?.name).toBe("x".repeat(2094));
+  expect(hits[2]?.path).toBe(`/r/${long}`);
+  // A stray NUL or a run of them is never read as a file.
+  expect(rels("\0")).toEqual([]);
+  expect(rels("\0\0\0 M ok.ts\0")).toEqual(["M ok.ts"]);
+  // Truncated with nothing whole before the cut: no rows, but it says so.
+  const cut = parseGitStatus("/r", "?? half", true);
+  expect(cut.hits).toEqual([]);
+  expect(cut.cut).toBe(true);
+});
+
+test("parse: a cap of zero lists nothing and says it stopped", async () => {
+  const none = parseGitStatus("/r", "?? a.ts\0", false, 0);
+  expect(none.hits).toEqual([]);
+  expect(none.capped).toBe(true);
+  // Rows git won't list don't count toward the cap.
+  const one = parseGitStatus("/r", " D gone\0?? dir/\0?? a.ts\0", false, 1);
+  expect(one.hits.map((hit) => hit.rel)).toEqual(["a.ts"]);
+  expect(one.capped).toBe(false);
+});
+
+test("the argv keeps an odd repository root as one argument, never split", async () => {
+  for (const root of ["/a b/c", "/-rf", "/x=y/--git-dir=z", "/a\nb", "/日本"]) {
+    const { argv, init } = gitStatusCall(root);
+    expect(argv).toHaveLength(16);
+    expect(argv.filter((arg) => arg.startsWith("--work-tree="))).toEqual([
+      `--work-tree=${root}`,
+    ]);
+    expect(argv.some((arg) => arg.startsWith("--git-dir"))).toBe(false);
+    expect(init.cwd).toBe(root);
+  }
+  // The flags that keep git from starting programs come before the subcommand,
+  // where git reads them as its own options.
+  const { argv } = gitStatusCall("/r");
+  const status = argv.indexOf("status");
+  for (const flag of [
+    "--no-lazy-fetch",
+    "--attr-source=4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+    "core.attributesFile=",
+    "core.fsmonitor=false",
+  ])
+    expect(argv.indexOf(flag)).toBeLessThan(status);
+  // A Windows drive root has nothing above it to fence off.
+  expect(gitStatusCall("C:\\").init).toEqual({ cwd: "C:\\" });
+  expect(ancestorsOf("C:\\a\\b")).toEqual(["C:\\a\\b", "C:\\a", "C:\\"]);
+});
+
+test("git failing: an unknown subcommand option from a very old git is a refusal too", async () => {
+  expect(
+    gitFailNote(129, "error: unknown option `ignore-submodules=all'\n"),
+  ).toBe("git 2.45 or newer is needed to keep repository filters from running");
+  // An exit other than 129 that mentions an option is git's own error.
+  expect(gitFailNote(128, "fatal: unknown option in config\n")).toBe(
+    "git status failed: fatal: unknown option in config",
+  );
+});

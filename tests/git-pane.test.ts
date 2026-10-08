@@ -602,3 +602,62 @@ test("a 60x14 terminal's pane: rows, status and footer keys still fit", async ($
   expect(log.filled).toEqual(["@a-rather-long-folder-name/sub/file-0.ts "]);
   await ui.unmount();
 });
+
+test("an old git or a SHA-256 repository shows the refusal, no list", async ($, on) => {
+  wire(on, {
+    exitCode: 129,
+    stderr: "unknown option: --no-lazy-fetch\nusage: git [-v | --version]\n",
+    stdout: " M src/a.ts\0",
+  });
+  const ui = await mount($);
+  await ui.press({ key: "changes" });
+  expect(await until(ui, { text: /git 2\.45 or newer is needed/ })).toBe(true);
+  expect(await ui.find({ key: "hit:/p/src/a.ts" })).toBeUndefined();
+  expect(await ui.find({ text: "(no changes)" })).toBeUndefined();
+  await ui.press({ key: "folders" });
+  expect(await ui.find({ key: "row:src" })).toBeDefined();
+  await ui.unmount();
+});
+
+test("a SHA-256 repository says it isn't supported", async ($, on) => {
+  wire(on, {
+    exitCode: 128,
+    stderr: "fatal: bad --attr-source or GIT_ATTR_SOURCE\n",
+  });
+  const ui = await mount($);
+  await ui.press({ key: "changes" });
+  expect(
+    await until(ui, { text: /SHA-256 repositories aren't supported/ }),
+  ).toBe(true);
+  await ui.unmount();
+});
+
+test("a repository at the filesystem root runs git with no ceiling", async ($, on) => {
+  const log = wire(on, { cwd: "/p", gitAt: "/.git", stdout: "?? top.ts\0" });
+  const ui = await mount($);
+  await ui.press({ key: "changes" });
+  expect(await until(ui, { key: "hit:/top.ts" })).toBe(true);
+  expect(log.runs).toHaveLength(1);
+  expect(log.runs[0]?.cwd).toBe("/");
+  expect(log.runs[0]?.ceiling).toBeUndefined();
+  await ui.unmount();
+});
+
+test("a name holding a terminal escape is drawn defanged", async ($, on) => {
+  wire(on, { stdout: "?? \u001b[2Jevil.ts\0?? ok.ts\0" });
+  const ui = await mount($);
+  await ui.press({ key: "changes" });
+  expect(await until(ui, { key: "hit:/p/ok.ts" })).toBe(true);
+  expect(await ui.find({ text: "\u001b[2Jevil.ts" })).toBeUndefined();
+  expect(await ui.find({ text: "\uFFFD[2Jevil.ts" })).toBeDefined();
+  await ui.unmount();
+});
+
+test("an empty, truncated git output says it was cut and lists nothing", async ($, on) => {
+  wire(on, { stdout: "?? half-a-na", truncated: true });
+  const ui = await mount($);
+  await ui.press({ key: "changes" });
+  expect(await until(ui, { text: /git output cut at 4 MiB/ })).toBe(true);
+  expect(await ui.find({ key: "hit:/p/half-a-na" })).toBeUndefined();
+  await ui.unmount();
+});
