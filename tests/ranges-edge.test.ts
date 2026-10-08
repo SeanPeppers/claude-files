@@ -186,7 +186,7 @@ test("a name that can't be mentioned: nothing goes in, the kept ranges stay", as
   await ui.unmount();
 });
 
-test("a prompt.fill that throws keeps the ranges", async ($, on) => {
+test("a prompt.fill that throws keeps every range, the one just picked too", async ($, on) => {
   const log = wire(on, "throws");
   const ui = await mount($);
   await openLinesOf($, ui, "app.ts");
@@ -194,7 +194,7 @@ test("a prompt.fill that throws keeps the ranges", async ($, on) => {
   await ui.press({ key: "line:7" });
   await ui.press({ key: "line:8" });
   expect(log.toasts.at(-1)).toMatch(/Could not add/);
-  expect(await ui.find({ text: /^Kept L2–3 · / })).toBeDefined();
+  expect(await ui.find({ text: /^Kept L2–3, L7–8 · / })).toBeDefined();
   await ui.unmount();
 });
 

@@ -728,8 +728,10 @@ async function insertRanges($: EngineInterface, last?: LineRange) {
   const ranges = mergeRanges(last ? kept.concat(last) : kept);
   await updateState($, "anchor", () => 0);
   if (ranges.length === 0) return;
-  // The kept ranges stay when the fill fails, so i can try again.
-  if (await pick($, path, ranges)) await updateState($, "kept", () => []);
+  // Whatever failed to go in, the range being picked too, stays kept so i
+  // retries all of it.
+  const filled = await pick($, path, ranges);
+  await updateState($, "kept", () => (filled ? [] : ranges));
 }
 
 async function findInLines($: EngineInterface, query: string) {

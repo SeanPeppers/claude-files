@@ -212,3 +212,36 @@ test("Enter-Enter after a kept range overlapping it merges into one mention", as
   expect(log.filled).toEqual(["@app.ts#L3-9 "]);
   await ui.unmount();
 });
+
+test("a failed fill keeps the range being picked too, so i retries all of it", async ($, on) => {
+  const log = wire(on, [false, true]);
+  const ui = await mount($);
+  await openLinesOf($, ui, "app.ts");
+  await keep($, ui, 1, 2);
+  await ui.press({ key: "line:7" });
+  await ui.press({ key: "line:9" });
+  expect(await ui.find({ text: /^Kept L1–2, L7–9 · / })).toBeDefined();
+  await ui.press({ key: "insert" });
+  expect(log.filled).toEqual([
+    "@app.ts#L1-2 @app.ts#L7-9 ",
+    "@app.ts#L1-2 @app.ts#L7-9 ",
+  ]);
+  expect(await ui.find({ text: /^Kept/ })).toBeUndefined();
+  await ui.unmount();
+});
+
+test("i with a range half picked: a failed fill keeps it for the retry", async ($, on) => {
+  const log = wire(on, [false, true]);
+  const ui = await mount($);
+  await openLinesOf($, ui, "app.ts");
+  await keep($, ui, 1, 2);
+  await ui.press({ key: "line:7" });
+  await arrowOnto($, "line:9");
+  await ui.press({ key: "insert" });
+  await ui.press({ key: "insert" });
+  expect(log.filled).toEqual([
+    "@app.ts#L1-2 @app.ts#L7-9 ",
+    "@app.ts#L1-2 @app.ts#L7-9 ",
+  ]);
+  await ui.unmount();
+});
