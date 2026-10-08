@@ -98,7 +98,8 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The mobile app no longer draws an empty frame where the filter and find
   boxes would be, or key hints it has no keys for; the list gets those rows.
 - A filter typed on another surface no longer hides files on mobile, where
-  there is no box to clear it.
+  there is no box to clear it, and tapping its `↓ N more` row pages the
+  list it shows rather than the filtered one, in the folder and in search.
 - The pane draws at 24 by 80 when a surface hasn't reported its size,
   instead of failing to draw.
 - Line view status and toasts say "click" or "tap" off the terminal.

@@ -150,6 +150,9 @@ type LineFooter = { anchored: boolean; kept: number };
 // The line view's rows as last drawn, under a given footer: its buttons can
 // wrap it.
 let lineRowsAfter = (_footer: LineFooter) => lineRows;
+// The filter the list was last drawn with: a surface with no filter box draws
+// it unfiltered, and a slide must page the same rows the person sees.
+let listQuery = "";
 // The row the ring is on, so `l` knows which file to open line by line.
 let focusedKey = "";
 // The previewed file's lines, read once when the line view opens.
@@ -843,9 +846,9 @@ async function ringToLine($: EngineInterface, n: number) {
 }
 
 // The keys of the list's rows, in the order drawn: recent files, search hits
-// or the folder's entries.
+// or the folder's entries, ranked by the filter they were drawn with.
 async function listKeys($: EngineInterface) {
-  const query = await readState($, "query");
+  const query = listQuery;
   if (await readState($, "recentView")) {
     const recent = await readState($, "recent");
     return recentShown(recent, query).map((hit) => hitKey(hit.path));
@@ -1883,6 +1886,7 @@ export const register: Register = (on) => {
     const showHidden = await readState($, "showHidden");
     // A filter typed on another surface can't be cleared where there is no box.
     const query = Input ? await readState($, "query") : "";
+    listQuery = query;
     const marked = await readState($, "marked");
     const markedSet = new Set(marked);
     const hiddenLabelOf = (shown: boolean) =>
