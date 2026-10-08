@@ -31,7 +31,9 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   files are never previewed (even after a yes), nor binary files, links that
   lead out of the project or files over 64 KiB; each gets a one-line notice
   instead. The preview shows only in a pane of at least 20 rows and 40
-  columns. When turning it on or off moves the highlighted row, the
+  columns, and not in the mobile app, where a tap presses a row instead of
+  resting on it; one left on by another surface is ignored there. When
+  turning it on or off moves the highlighted row, the
   highlight goes to the `p` button, so a second `p` turns it off again.
 - Several ranges from one file: in the line view, `k` keeps the range being
   picked so another can be picked after it. Enter on the last line of the

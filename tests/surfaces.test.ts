@@ -282,6 +282,8 @@ test("a phone gets the rows the missing box and hints would take", async ($, on)
     await ui.unmount();
     return shown;
   };
+  // The box and hint take 4 rows (1 in a compact pane); at 40 columns the
+  // footer wraps to as many rows without the preview button the phone lacks.
   expect((await rowsOn("mobile", 30)) - (await rowsOn("terminal", 30))).toBe(4);
   expect((await rowsOn("mobile", 12)) - (await rowsOn("terminal", 12))).toBe(1);
   expect(await rowsOn("desktop", 30)).toBe(await rowsOn("terminal", 30));

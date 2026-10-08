@@ -1909,13 +1909,18 @@ export const register: Register = (on) => {
         {hiddenLabelOf(showHidden)}
       </Button>
     );
-    const peeking = await readState($, "peek");
+    // The preview follows the ring, which a tap can't move without pressing
+    // the row, so the phone has no preview and ignores one left on elsewhere.
+    const canPeek = e.surface !== "mobile";
+    const peeking = canPeek && (await readState($, "peek"));
     // Read so the pane redraws when a preview read lands.
     if (peeking) await readState($, "peeked");
     const peekLabelOf = (shown: boolean) =>
       shown ? "hide preview" : "preview";
     const peekLabel = peekLabelOf(peeking);
-    const peekButton = (
+    const peekLabelsOf = (shown: boolean) =>
+      canPeek ? [`p: ${peekLabelOf(shown)}`] : [];
+    const peekButton = canPeek && (
       <Button
         key={peekKey(peeking)}
         plain
@@ -1937,7 +1942,7 @@ export const register: Register = (on) => {
       const rowsWith = (footer: Footer) => {
         const footerRows = wrappedRows(labelsFor(footer), bodyColumns);
         const room = bodyRows - LIST_CHROME_ROWS - (footerRows - 1) + saved;
-        const fits = peekLines(room, bodyColumns, compact);
+        const fits = canPeek ? peekLines(room, bodyColumns, compact) : 0;
         const peekRows = footer.peek && fits > 0 ? fits + PEEK_CHROME_ROWS : 0;
         return { fits, rows: Math.max(1, room - peekRows) };
       };
@@ -1991,7 +1996,7 @@ export const register: Register = (on) => {
         ...(recentView || changes
           ? []
           : [`h: ${hiddenLabelOf(footer.hidden)}`]),
-        `p: ${peekLabelOf(footer.peek)}`,
+        ...peekLabelsOf(footer.peek),
         ...markLabelsOf(footer.marks),
       ]);
       const walk = recentView ? undefined : project?.walk;
@@ -2240,7 +2245,7 @@ export const register: Register = (on) => {
       ...(prevDir && prevDir !== dir ? ["b: back"] : []),
       "c: cwd",
       `h: ${hiddenLabelOf(footer.hidden)}`,
-      `p: ${peekLabelOf(footer.peek)}`,
+      ...peekLabelsOf(footer.peek),
       "a: @ folder",
       ...markLabelsOf(footer.marks),
     ]);

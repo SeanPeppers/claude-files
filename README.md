@@ -221,7 +221,9 @@ and folders still open so you can get to it. `mark` switches to `done marking`
 in the same way: each file you press is marked or unmarked until you press it
 again or insert the marks. Line ranges work by pressing the first line and then
 the last. The mobile app has no text fields yet, so there is no filter or find
-box and no key hints. Clicking or tapping a `↑ N more` / `↓ N more` row pages
+box and no key hints; a filter typed on another surface is ignored there. It has
+no preview either, since a tap presses a row rather than resting on it, and a
+preview left on elsewhere is ignored. Clicking or tapping a `↑ N more` / `↓ N more` row pages
 the list or file, as on the terminal.
 The terminal works as before.
 
@@ -422,9 +424,9 @@ only to ask before such a file goes into the prompt.
 | Linux | tested in CI and by hand in a real terminal |
 | macOS | tested in CI; decomposed (NFD) filenames match typed accents |
 | Windows | tested in CI; drive letters, `\` paths and `\\server\share` work. Files hidden by attribute (not a leading dot) still show |
-| Desktop app (Code tab) | unit-tested: the pane is drawn and used with the desktop's elements, by keys and by clicks (`lines` and `mark` arm for the next file pressed, and clicking a `↑/↓ N more` row pages without skipping a row). Not yet tried in the real app |
-| VS Code | unit-tested the same way as the desktop app, including a Windows working directory. Not yet tried in the real extension |
-| Claude mobile app | unit-tested: no filter or find box (the app draws no text fields yet), no key hints, and the room they would take goes to the list; rows, `lines`, `mark` and line ranges work by tapping. A filter typed on another surface is ignored here, both when drawing and when a `↑/↓ N more` row is tapped, in the folder and in search. Not yet tried in the real app |
+| Desktop app (Code tab) | unit-tested: the pane is drawn and used with the desktop's elements, by keys and by clicks (`lines` and `mark` arm for the next file pressed, and clicking a `↑/↓ N more` row pages without skipping a row), and the preview (`p`) follows the arrows. Not yet tried in the real app |
+| VS Code | unit-tested the same way as the desktop app, including a Windows working directory and the preview (`p`). Not yet tried in the real extension |
+| Claude mobile app | unit-tested: no filter or find box (the app draws no text fields yet), no key hints, and the room they would take goes to the list; rows, `lines`, `mark` and line ranges work by tapping. A filter typed on another surface is ignored here, both when drawing and when a `↑/↓ N more` row is tapped, in the folder and in search. There is no preview button, and a preview left on by another surface draws nothing and reads no file. Not yet tried in the real app |
 
 The unit tests run the plugin's hooks against each surface's element table
 with Claude Code's own test kit. They don't paint anything, so the pane's

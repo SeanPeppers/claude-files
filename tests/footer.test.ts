@@ -122,20 +122,22 @@ for (const [COLUMNS, BODY_ROWS] of [
       // The preview, where it fits, takes its rows from the list, not the pane.
       // At 40 columns the mark wraps the footer to a fourth row, which leaves
       // a 20-row pane too little for the preview; at 41 it takes three. The
-      // phone, with no text box or hints, has the rows for it at 40 too.
-      await ui.press({ key: "peek" });
-      await focus("row:f02.ts");
-      await clock.advance(200);
-      let previewed = false;
-      for (let i = 0; i < 50 && !previewed; i++)
-        previewed = (await ui.find({ text: /^line 1$/ })) !== undefined;
-      expect(previewed).toBe(
-        BODY_ROWS >= 20 && COLUMNS >= (surface === "mobile" ? 40 : 41),
-      );
-      expect(heightOf(await ui.drawn(), COLUMNS)).toBeLessThanOrEqual(
-        BODY_ROWS,
-      );
-      await ui.press({ key: "hide-peek" });
+      // phone has no preview.
+      if (surface === "mobile")
+        expect(await ui.find({ key: "peek" })).toBeUndefined();
+      else {
+        await ui.press({ key: "peek" });
+        await focus("row:f02.ts");
+        await clock.advance(200);
+        let previewed = false;
+        for (let i = 0; i < 50 && !previewed; i++)
+          previewed = (await ui.find({ text: /^line 1$/ })) !== undefined;
+        expect(previewed).toBe(COLUMNS >= 41 && BODY_ROWS >= 20);
+        expect(heightOf(await ui.drawn(), COLUMNS)).toBeLessThanOrEqual(
+          BODY_ROWS,
+        );
+        await ui.press({ key: "hide-peek" });
+      }
 
       await focus("row:f01.ts");
       await ui.press({ key: "lines" });
