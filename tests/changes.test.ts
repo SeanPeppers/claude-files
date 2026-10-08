@@ -1,6 +1,11 @@
 import { expect, test } from "claude-code/testing";
 
-import { ancestorsOf, gitStatusCall, parseGitStatus } from "../hooks/rank";
+import {
+  ancestorsOf,
+  gitFailNote,
+  gitStatusCall,
+  parseGitStatus,
+} from "../hooks/rank";
 import { posix } from "./posix";
 
 const rels = (out: string, truncated = false, max?: number) =>
@@ -78,6 +83,43 @@ test("git status: a cut output says so; an overlong one is capped", async () => 
   expect(capped.capped).toBe(true);
   expect(capped.cut).toBeUndefined();
   expect(parseGitStatus("/r", many, false, 30).capped).toBe(false);
+});
+
+test("git status runs read-only, with nothing able to start a program", async () => {
+  expect(gitStatusCall("/a/b").argv).toEqual([
+    "git",
+    "--no-optional-locks",
+    "--no-lazy-fetch",
+    "--attr-source=4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+    "-c",
+    "core.attributesFile=",
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "core.untrackedCache=false",
+    "--work-tree=/a/b",
+    "status",
+    "--porcelain=v1",
+    "-z",
+    "--untracked-files=all",
+    "--ignore-submodules=all",
+  ]);
+});
+
+test("git failing: too old, SHA-256, or its own first stderr line", async () => {
+  expect(
+    gitFailNote(129, "unknown option: --no-lazy-fetch\nusage: git [-v]\n"),
+  ).toBe("git 2.45 or newer is needed to keep repository filters from running");
+  expect(
+    gitFailNote(128, "fatal: bad --attr-source or GIT_ATTR_SOURCE\n"),
+  ).toBe("SHA-256 repositories aren't supported: git can't skip their filters");
+  expect(gitFailNote(128, "fatal: not a git repository\nmore\n")).toBe(
+    "git status failed: fatal: not a git repository",
+  );
+  expect(gitFailNote(129, "usage: git status\n")).toBe(
+    "git status failed: usage: git status",
+  );
+  expect(gitFailNote(1, "  \n")).toBe("git status failed: exit 1");
 });
 
 test("git status runs pinned to the root found, never climbing past it", async () => {
@@ -209,18 +251,7 @@ const until = async (ui: any, query: object, tries = 200) => {
   return false;
 };
 
-const EXPECTED_ARGV = [
-  "git",
-  "--no-optional-locks",
-  "-c",
-  "core.fsmonitor=false",
-  "--work-tree=/p",
-  "status",
-  "--porcelain=v1",
-  "-z",
-  "--untracked-files=all",
-  "--ignore-submodules=all",
-];
+const EXPECTED_ARGV = gitStatusCall("/p").argv;
 
 test("g lists git's changed files; Enter, l, m and f work on them", async ($, on) => {
   const log = wire(on);

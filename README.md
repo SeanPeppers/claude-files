@@ -148,7 +148,7 @@ repository's changes; paths are shown relative to the repository root.
 Untracked files are listed one by one, hidden ones included; files deleted
 from the working tree are left out, since there is nothing to mention, and a
 renamed file shows under its new name. Outside a repository, or when git is
-missing or fails, the pane says so. The list stops at 20,000 files (or 4 MiB
+missing, too old or fails, the pane says so. The list stops at 20,000 files (or 4 MiB
 of git output) and says which limit it hit. Press `g` again from the folder
 list to see changes made since.
 
@@ -200,7 +200,7 @@ stays on your screen: nothing it reads goes into the prompt. When you press `g`
 it runs one command, in the repository root, with no shell:
 
 ```
-git --no-optional-locks -c core.fsmonitor=false --work-tree=<repository root> status --porcelain=v1 -z --untracked-files=all --ignore-submodules=all
+git --no-optional-locks --no-lazy-fetch --attr-source=4b825dc642cb6eb9a060e54bf8d69288fbee4904 -c core.attributesFile= -c core.fsmonitor=false -c core.untrackedCache=false --work-tree=<repository root> status --porcelain=v1 -z --untracked-files=all --ignore-submodules=all
 ```
 
 with `GIT_CEILING_DIRECTORIES` set to the folder above the repository root, so
@@ -208,20 +208,40 @@ the paths git prints always belong to the root the plugin found: a broken
 `.git` there makes git fail (and the pane say so) instead of reporting an
 outer repository's paths. That variable is only set for git, never read.
 
-Git is kept to reading as far as its flags allow: optional locks are off
-so git doesn't refresh its index file, `core.fsmonitor` is off so git starts
-no file-system monitor, submodules are ignored so git doesn't run itself inside
-them, and Claude Code turns repository hooks off for every git it runs. The
-plugin runs no other command, but git itself may: to compare a changed file
-with the index, `git status` runs any clean or process filter the repository's
-`.gitattributes` and git config set up for it, such as Git LFS
-(`filter.lfs.process`), and git has no flag that turns those off. Such a
-filter is a program the repository (or your own git config) names, and it can
-do whatever that program does. Press `g` only in repositories whose config you
-trust as much as running `git status` there yourself. Apart from that, the
-plugin never writes files or touches the network, never reads your
-Claude Code settings, and nothing is sent until you press Enter on the prompt
-yourself.
+The flags keep git from writing or starting anything a repository sets up:
+
+- `--no-optional-locks`: git doesn't write its index file.
+- `--attr-source=<empty tree>` and `core.attributesFile=` (empty): git reads
+  no `.gitattributes` from the working tree, index or `attr.tree`, and no
+  global attributes file, so no file is handed to a clean or process filter
+  (such as Git LFS, `filter.lfs.process`) or other conversion. A file that
+  needs one (line endings, Git LFS) may show as `M` when its timestamps
+  changed but its content didn't.
+- `--no-lazy-fetch`: a partial clone never contacts its promisor remote, so
+  git starts no ssh or other transport and makes no network request.
+- `core.fsmonitor=false`: git starts no file-system monitor.
+- `core.untrackedCache=false`: git neither reads nor updates the untracked
+  cache.
+- `--ignore-submodules=all`: git doesn't run itself inside submodules.
+
+Claude Code also turns repository hooks off for every git it runs.
+
+What is still possible: git has no flag that skips `$GIT_DIR/info/attributes`
+(the main repository's, for a linked worktree) or the system attributes file.
+If one of those assigns a filter, and your repository, global or system git
+config defines that filter's command, `git status` runs it, and it can do
+whatever that program does. Cloning writes neither file nor any filter command
+into `.git`, so this takes someone who already wrote into your `.git` (or a
+`.git` you copied from someone else, such as from an archive) or your own
+git config. Press `g` only where you'd run `git status` yourself.
+
+`g` needs git 2.45 or newer (for `--no-lazy-fetch`; `--attr-source` came in
+2.41). An older git stops at the unknown option before reading anything, and
+the pane says a newer git is needed. In a SHA-256 repository git rejects the
+SHA-1 empty tree the same way, and the pane says such repositories aren't
+supported. Apart from that one command, the plugin runs nothing, never writes
+files or touches the network, never reads your Claude Code settings, and
+nothing is sent until you press Enter on the prompt yourself.
 
 **Secrets files need a second yes.** For `.env` and `.envrc` files, private
 keys (`*.pem`, `*.key`, `*.ppk`, `id_rsa`, `id_ed25519`, ...), credential files
@@ -273,7 +293,7 @@ changes what Claude or its tools do; they only add the pane.
 
 Engine calls it makes: `$.command.register` (the `/files` command),
 `$.fs.list` and `$.fs.stat` (folder listings and file types; project search is `$.fs.list` alone, one folder per call; `g` also stats `.git` in the working directory and each folder above it to find the repository root),
-`$.process.run` (only the one `git status` command above, only when you press `g`; git may in turn run the repository's clean or process filters, see Safety),
+`$.process.run` (only the one `git status` command above, only when you press `g`; its flags keep `.gitattributes` from starting filters, and Safety says what git can still run),
 `$.fs.read` (the file you press `l` on, up to 4 MiB, and with the preview on,
 the highlighted file, up to 64 KiB), `$.clock.after` (waits 120 ms for the
 arrows to rest before the preview reads),
@@ -282,7 +302,7 @@ toasts) and `$.state` (the pane's own session state: folder, filter, scroll
 position, search or changes mode, the open file, the range start, the marked
 files and whether the preview is on). It
 reads no environment variables, tokens or Claude Code settings, and it makes
-no network requests (`git status` reads only local files): `claude plugin validate` shows no `env reads:` line and no
+no network requests (`git status` runs with lazy fetch off, so it reads only local files): `claude plugin validate` shows no `env reads:` line and no
 network calls. The list of secrets file names under [Safety](#safety) is used
 only to ask before such a file goes into the prompt.
 

@@ -7,6 +7,7 @@ import {
   findLine,
   fitCells,
   fitCellsStart,
+  gitFailNote,
   gitStatusCall,
   headLines,
   humanSize,
@@ -495,8 +496,7 @@ async function gitCwd($: EngineInterface) {
       const ran = await $.process.run(argv, init);
       if (ran.exitCode === 0)
         current.walk = parseGitStatus(root, ran.stdout, ran.isStdoutTruncated);
-      else
-        current.note = `git status failed: ${ran.stderr.trim().split("\n")[0] || `exit ${ran.exitCode}`}`;
+      else current.note = gitFailNote(ran.exitCode, ran.stderr);
     } catch (err) {
       current.note = `Couldn't run git: ${err instanceof Error ? err.message : String(err)}`;
     }

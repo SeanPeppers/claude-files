@@ -563,26 +563,49 @@ export const ancestorsOf = (path: string) => {
   return out;
 };
 
+// Git's well-known empty tree. It's SHA-1, so a SHA-256 repository rejects it
+// and git stops before reading anything (see gitFailNote).
+const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
+// Why `git status` gave no list, for the pane. A git too old for
+// `--no-lazy-fetch` (2.45) or `--attr-source` (2.41) stops at the unknown
+// option with exit 129 and runs nothing, which is the refusal we want.
+export const gitFailNote = (exitCode: number, stderr: string) => {
+  if (exitCode === 129 && stderr.includes("unknown option"))
+    return "git 2.45 or newer is needed to keep repository filters from running";
+  if (stderr.includes("bad --attr-source"))
+    return "SHA-256 repositories aren't supported: git can't skip their filters";
+  return `git status failed: ${stderr.trim().split("\n")[0] || `exit ${exitCode}`}`;
+};
+
 // The one command the plugin runs, from the repository `root` found by its
-// `.git`. Read-only: optional locks off, so status doesn't refresh the index;
-// fsmonitor off, since a repository's own config could name a program for it;
-// submodules ignored, so git starts no other git. Not covered: git still runs
-// any clean or process filter (e.g. git-lfs) the repository config names for
-// a file it must re-hash, and no flag turns filters off. The engine turns
-// repository hooks off for every git it runs. Porcelain paths are relative to
-// git's work tree, so `--work-tree` pins it to `root` whatever GIT_DIR,
-// GIT_WORK_TREE or core.worktree say, and the ceiling stops git from climbing
-// past a `.git` it finds invalid into an outer repository: it fails instead.
-// `--git-dir` isn't used since an explicit git dir skips git's safe.directory
-// ownership check.
+// `.git`. Optional locks off, so status doesn't write the index. Nothing a
+// repository's files or config set up may start a program: fsmonitor off;
+// attributes read from the empty tree and no global attributes file, so no
+// `.gitattributes` can hand a file to a clean or process filter; lazy fetch
+// off, so a partial clone's promisor remote (and its ssh command) is never
+// reached; submodules ignored, so git starts no other git. Not covered:
+// `$GIT_DIR/info/attributes`, which no flag skips, and the system
+// attributes file. The engine turns repository hooks off for every git it
+// runs. Porcelain paths are relative to git's work tree, so `--work-tree`
+// pins it to `root` whatever GIT_DIR, GIT_WORK_TREE or core.worktree say,
+// and the ceiling stops git from climbing past a `.git` it finds invalid into
+// an outer repository: it fails instead. `--git-dir` isn't used since an
+// explicit git dir skips git's safe.directory ownership check.
 // ponytail: a parent holding the path-list separator can't be a ceiling, so
 // it's left off there; `--work-tree` still keeps every row under `root`.
 export const gitStatusCall = (root: string) => {
   const argv = [
     "git",
     "--no-optional-locks",
+    "--no-lazy-fetch",
+    `--attr-source=${EMPTY_TREE}`,
+    "-c",
+    "core.attributesFile=",
     "-c",
     "core.fsmonitor=false",
+    "-c",
+    "core.untrackedCache=false",
     `--work-tree=${root}`,
     "status",
     "--porcelain=v1",

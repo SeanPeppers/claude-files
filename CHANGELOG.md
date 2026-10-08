@@ -17,12 +17,15 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `g` lists the files git sees as changed or untracked, with their status
   (`M`, `A`, `R`, `??`, `UU`), filtered and picked like project search
   results: Enter, `l` and `m` work on them. It runs one command,
-  `git status --porcelain=v1 -z` (with optional locks, fsmonitor and
-  submodules off), pinned to the repository root with `--work-tree` and
-  `GIT_CEILING_DIRECTORIES`, and no other. Git may still run clean or
-  process filters (such as Git LFS) that the repository's config sets up;
-  the README's Safety section names the command in full and says so. Outside a repository, or when git is
-  missing or fails, the pane says why.
+  `git status --porcelain=v1 -z`, pinned to the repository root with
+  `--work-tree` and `GIT_CEILING_DIRECTORIES`, and no other. Its flags turn
+  off optional locks, lazy fetch, fsmonitor, the untracked cache and
+  submodules, and read attributes from the empty tree with no global
+  attributes file, so a repository's `.gitattributes` can't make git run a
+  clean or process filter. It needs git 2.45 or newer. The README's Safety
+  section names the command in full and says what git can still run.
+  Outside a repository, or when git is missing, too old or fails, the pane
+  says why.
 
 ## [0.4.3] - 2026-10-07
 
