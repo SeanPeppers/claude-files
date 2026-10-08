@@ -184,3 +184,24 @@ test("a name with a space: every kept range is quoted", async ($, on) => {
   expect(log.filled).toEqual(['@"with space.ts#L1-2" @"with space.ts#L9-10" ']);
   await ui.unmount();
 });
+
+// A click presses a line without moving the ring, so the new start must
+// stand in for the ring or the range runs from the line the ring left.
+test("clicking a line to start a range ignores where the ring was", async ($, on) => {
+  const log = wire(on);
+  const ui = await mount($);
+  await openLinesOf($, ui, "app.ts");
+  await arrowOnto($, "line:2");
+  await ui.press({ key: "line:2" });
+  await arrowOnto($, "line:5");
+  await arrowOnto($, "keep");
+  await ui.press({ key: "keep" });
+  await ui.press({ key: "line:20" });
+  expect(await ui.find({ text: /^Kept L2–5 · From line 20/ })).toBeDefined();
+  expect(await ui.find({ text: /┃/ })).toBeUndefined();
+  await ui.press({ key: "keep" });
+  expect(await ui.find({ text: /^Kept L2–5, L20 · / })).toBeDefined();
+  await ui.press({ key: "insert" });
+  expect(log.filled).toEqual(["@app.ts#L2-5 @app.ts#L20 "]);
+  await ui.unmount();
+});

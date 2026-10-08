@@ -64,10 +64,10 @@ const LINEOFFSET_STATE = { plugin: "file-picker", key: "lineOffset" } as const;
 const ANCHOR_STATE = { plugin: "file-picker", key: "anchor" } as const;
 // Ranges of the shown file kept for one insert, merged and in line order.
 const KEPT_STATE = { plugin: "file-picker", key: "kept" } as const;
-// The last line the ring was on in the shown file, or 0: state, so the range
-// redraws as it moves. It outlives the ring moving onto a footer button, so
-// tabbing to or clicking keep or insert takes the range on screen, not the
-// start alone.
+// The last line the ring was on in the shown file, or the line a click just
+// started a range on (a click leaves the ring where it was), or 0: state, so
+// the range redraws as it moves. It outlives the ring moving onto a footer
+// button, so tabbing to or clicking keep or insert takes the range on screen.
 const FOCUSLINE_STATE = { plugin: "file-picker", key: "focusLine" } as const;
 // A secrets-looking file waiting for a second yes, and what to do with it.
 const CONFIRM_STATE = { plugin: "file-picker", key: "confirm" } as const;
@@ -712,6 +712,9 @@ async function closeLines($: EngineInterface) {
 async function pressLine($: EngineInterface, n: number) {
   const anchor = await readState($, "anchor");
   if (!anchor) {
+    // A click presses a line without moving the ring onto it, so the range
+    // would otherwise run from wherever the ring last was.
+    await updateState($, "focusLine", () => n);
     await updateState($, "anchor", () => n);
     return $.ui.toast(`Range starts at line ${n}: Enter on the last line`);
   }
@@ -945,11 +948,10 @@ export const register: Register = (on) => {
       const anchor = await readState($, "anchor");
       const ringLine = await readState($, "focusLine");
       const kept = await readState($, "kept");
+      // What k keeps and i adds; pressLine records the start as the ring line
+      // too, so there is one whenever a range is started.
       const range = anchor && ringLine ? rangeOf(anchor, ringLine) : undefined;
-      // What k keeps and i adds: the range on screen, or the start alone when
-      // the ring hasn't been on a line of this file.
-      const current = anchor ? (range ?? rangeOf(anchor, anchor)) : undefined;
-      const toInsert = mergeRanges(current ? kept.concat(current) : kept);
+      const toInsert = mergeRanges(range ? kept.concat(range) : kept);
       const insertLabel = `insert ${toInsert.length} ${toInsert.length === 1 ? "range" : "ranges"}`;
       const clearLabel = kept.length > 0 ? "clear all" : "clear start";
       // The chrome counts one footer row; a narrow pane wraps it. Rows are
@@ -970,13 +972,14 @@ export const register: Register = (on) => {
         1,
         e.props.scroll.bodyRows - LINES_CHROME_ROWS - (footerRows - 1) + saved,
       );
-      const status = range
-        ? `${rangeLabel(range)}: Enter to add${kept.length > 0 ? " all" : ""}, k to keep, x to clear`
-        : anchor
-          ? `From line ${anchor}: Enter on the last line of the range`
-          : kept.length > 0
-            ? "Enter on the first line of another range, or i to insert"
-            : "Enter on the first line of the range";
+      const status =
+        range && range.start !== range.end
+          ? `${rangeLabel(range)}: Enter to add${kept.length > 0 ? " all" : ""}, k to keep, x to clear`
+          : anchor
+            ? `From line ${anchor}: Enter on the last line of the range`
+            : kept.length > 0
+              ? "Enter on the first line of another range, or i to insert"
+              : "Enter on the first line of the range";
       const offset = Math.min(
         await readState($, "lineOffset"),
         Math.max(0, lines.length - lineRows),
@@ -1083,13 +1086,13 @@ export const register: Register = (on) => {
             <Button plain hotkey="w" dimColor onPress={() => pick($, preview)}>
               whole file
             </Button>
-            {current && (
+            {range && (
               <Button
                 key="keep"
                 plain
                 hotkey="k"
                 dimColor
-                onPress={() => keepRange($, current)}
+                onPress={() => keepRange($, range)}
               >
                 keep range
               </Button>
@@ -1114,7 +1117,7 @@ export const register: Register = (on) => {
                 plain
                 hotkey="i"
                 variant="primary"
-                onPress={() => insertRanges($, current)}
+                onPress={() => insertRanges($, range)}
               >
                 {insertLabel}
               </Button>

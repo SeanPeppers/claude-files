@@ -111,7 +111,7 @@ test("kept ranges in a 5000-line file survive sliding and go in in order", async
   expect(await ui.find({ key: "line:4990" })).toBeDefined();
   await ui.press({ key: "line:4990" });
   await arrowOnto($, "line:4990");
-  expect(await ui.find({ text: /^Kept L1–3 · Line 4990/ })).toBeDefined();
+  expect(await ui.find({ text: /^Kept L1–3 · From line 4990/ })).toBeDefined();
   await ui.press({ key: "line:4990" });
   expect(log.filled).toEqual(["@big.ts#L1-3 @big.ts#L4990 "]);
   await ui.unmount();

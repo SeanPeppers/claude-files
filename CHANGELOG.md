@@ -15,7 +15,8 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   touching ranges merged. Kept lines show `✓` in the gutter and are listed in
   the status line; `x` clears them along with the start. The `keep range`
   and `insert` buttons, reached with Tab, the arrows or a click, take the
-  range on screen just as the keys do.
+  range on screen just as the keys do, and clicking a line starts a range
+  there wherever the ring was.
 
 ## [0.4.3] - 2026-10-07
 
