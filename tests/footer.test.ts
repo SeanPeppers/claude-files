@@ -116,7 +116,11 @@ for (const [COLUMNS, BODY_ROWS] of [
     await focus("row:f01.ts");
     await ui.press({ key: "lines" });
     expect(await ui.find({ key: "line:1" })).toBeDefined();
+    // A kept range and a new start: every footer button shows.
     await ui.press({ key: "line:1" });
+    await ui.press({ key: "keep" });
+    await ui.press({ key: "line:1" });
+    expect(await ui.find({ key: "insert" })).toBeDefined();
     await ui.press({ key: "more:below" });
     expect(heightOf(await ui.drawn(), COLUMNS)).toBeLessThanOrEqual(BODY_ROWS);
     await ui.press({ key: "files" });

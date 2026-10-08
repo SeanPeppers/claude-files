@@ -20,7 +20,7 @@ or press `l` and pick just the lines you care about: `@src/app.ts#L40-72`.
  42 │   if (!user) return unauthorized();
  ↓ 38 more
 
- f: files  w: whole file  x: clear start
+ f: files  w: whole file  k: keep range  x: clear start
 
 ❯ @src/app.ts#L40-72
 ```
@@ -91,6 +91,9 @@ To update later: `claude plugin update file-picker@claude-files`.
   and again on line 145, then ask "simplify this loop". The prompt gets
   `@src/report.py#L120-145`, so Claude reads those 26 lines rather than the
   whole file.
+- **Several pieces of one file.** In the line view, press Enter on line 10,
+  arrow to line 20 and press `k` to keep that range; then Enter on 80 and on
+  95. Both go in together: `@src/a.ts#L10-20 @src/a.ts#L80-95`.
 - **Gather files from across the project.** Press `s` to search the whole
   project, press `m` on `api.ts`, `api.test.ts` and `docs/api.md`, then `i`,
   and ask "make the docs match the code". All three mentions go in at once.
@@ -138,10 +141,12 @@ added since.
 |---|---|
 | `↑` `↓` | move through the lines; long files slide as you go |
 | `Enter` on a line | first press marks the start, second the end: `@file#L12-30` goes in. Enter twice on one line gives `#L12` |
-| `↑` `↓` after a start | the lines from the start (`▸`) to the one you're on are highlighted (`┃`), and the status line reads `Lines 12–30 (19 lines): Enter to add, x to clear` |
+| `↑` `↓` after a start | the lines from the start (`▸`) to the one you're on are highlighted (`┃`), and the status line reads `Lines 12–30 (19 lines): Enter to add, k to keep, x to clear` |
+| `k` after a start | keep that range and pick another of the same file: kept lines show `✓` and the status line lists them (`Kept L10–20, L80–95`). Overlapping or touching ranges merge into one |
+| `Enter` on the last line, or `i` | with ranges kept, put them all in at once, in line order, as separate mentions: `@src/a.ts#L10-20 @src/a.ts#L80-95`. `i` takes a range you're still picking along too |
 | find box | type text and press Enter to jump to the next line containing it |
 | `w` | put the whole file in instead |
-| `x` | clear the start you marked |
+| `x` | clear the start you marked and any kept ranges |
 | `f` | back to the folder |
 
 **In and out in one key.** Open a folder and the focus sits on `../`, so Enter
@@ -171,10 +176,11 @@ to give it room.
 What the plugin does: it lists folders (project search lists every folder under
 the working directory, within the limits above, and never opens a file), reads
 a file **only when you press `l` on it** (to draw its lines in the pane), and
-inserts text into your prompt. It
-never writes files, runs commands or touches the network, never reads your
-Claude Code settings, and nothing is sent until you press Enter on the prompt
-yourself.
+inserts text into your prompt. What it remembers (the folder, the filter, the
+marked files, the kept line ranges) is the pane's own session state, never file
+contents. It never writes files, runs commands or touches the network, never
+reads your Claude Code settings, and nothing is sent until you press Enter on
+the prompt yourself.
 
 **Secrets files need a second yes.** For `.env` and `.envrc` files, private
 keys (`*.pem`, `*.key`, `*.ppk`, `id_rsa`, `id_ed25519`, ...), credential files
@@ -221,7 +227,7 @@ changes what Claude or its tools do; they only add the pane.
 |---|---|
 | `session.start` | registers the `/files` command |
 | `command.run` (`/files` only) | opens the Files pane with an empty filter. It is matched to the `/files` command, so it never sees or changes any other command |
-| `ui.render` (the Files pane) | draws the folder list, the project search, the line view or the secrets confirmation |
+| `ui.render` (the Files pane) | draws the folder list, the project search, the line view (with any kept ranges) or the secrets confirmation |
 | `ui.focus` (the Files pane) | remembers the highlighted row for `l` and `m`, and when the arrows reach a `↑/↓ N more` row, slides the list one row |
 
 Engine calls it makes: `$.command.register` (the `/files` command),
@@ -229,9 +235,9 @@ Engine calls it makes: `$.command.register` (the `/files` command),
 `$.fs.read` (only the file you press `l` on, up to 4 MiB),
 `$.prompt.fill` (insert the mention), `$.session.cwd`, `$.ui.*` (pane, focus,
 toasts) and `$.state` (the pane's own session state: folder, filter, scroll
-position, search mode, the open file, the range start and the marked files). It
-reads no environment variables, tokens or Claude Code settings, and it makes
-no network requests: `claude plugin validate` shows no `env reads:` line and no
+position, search mode, the open file, the range start, the kept line ranges
+and the marked files). It reads no environment variables, tokens or Claude
+Code settings, and it makes no network requests: `claude plugin validate` shows no `env reads:` line and no
 network calls. The list of secrets file names under [Safety](#safety) is used
 only to ask before such a file goes into the prompt.
 

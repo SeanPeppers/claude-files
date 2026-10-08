@@ -4,6 +4,17 @@ All notable changes to this plugin are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the plugin
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Several ranges from one file: in the line view, `k` keeps the range being
+  picked so another can be picked after it. Enter on the last line of the
+  final range, or `i`, puts them all in as separate mentions
+  (`@src/a.ts#L10-20 @src/a.ts#L80-95`), in line order, with overlapping or
+  touching ranges merged. Kept lines show `✓` in the gutter and are listed in
+  the status line; `x` clears them along with the start.
+
 ## [0.4.3] - 2026-10-07
 
 ### Changed
