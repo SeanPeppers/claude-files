@@ -128,31 +128,55 @@ const FEEDBACK_STATE = { plugin: "file-picker", key: "feedback" } as const;
 // `m` arm instead: "lines" or "mark" acts on the next file pressed, or ''.
 const ARMED_STATE = { plugin: "file-picker", key: "armed" } as const;
 
-// Rows of the list or of the file that fit in the pane, as last drawn. Both
-// are drawn a window at a time: a pane taller than its tree takes the arrows
-// to scroll, one that fits lets them walk the rows.
-let listRows = 10;
-let lineRows = 10;
 // What the list's footer labels hang on: a press that changes one can rewrap
 // the footer and so change the list's rows.
 type Footer = { peek: boolean; hidden: boolean; marks: number };
-// The list's rows as last drawn, under a footer changed by `change`, so a
-// press knows the rows it is about to leave.
-let listRowsAfter = (_change: Partial<Footer>) => listRows;
+// What the line view's footer buttons hang on: a range start brings k and x,
+// kept ranges bring x and i.
+type LineFooter = { anchored: boolean; kept: number };
+// What each surface last drew: the rows of the list and of the file that fit
+// its pane, those rows under another footer (a press that changes a footer
+// label can rewrap it, so the press knows the rows it is about to leave), and
+// the filter it drew the list with (none where it has no box). Both are drawn
+// a window at a time: a pane taller than its tree takes the arrows to scroll,
+// one that fits lets them walk the rows. Kept per surface because a terminal
+// and a phone can draw one session at once.
+type Drawn = {
+  listRows: number;
+  lineRows: number;
+  listRowsAfter: (change: Partial<Footer>) => number;
+  lineRowsAfter: (footer: LineFooter) => number;
+  listQuery: string;
+};
+const unseen = (): Drawn => ({
+  listRows: 10,
+  lineRows: 10,
+  listRowsAfter: () => 10,
+  lineRowsAfter: () => 10,
+  listQuery: "",
+});
 // Which of two keys the m button and the line view's f button are drawn
 // under. A press that has to put the ring back flips one, so the key the ring
 // is first sent to is not on screen yet and the focus waits for the redraw.
 let markAgain = false;
 let filesAgain = false;
-// What the line view's footer buttons hang on: a range start brings k and x,
-// kept ranges bring x and i.
-type LineFooter = { anchored: boolean; kept: number };
-// The line view's rows as last drawn, under a given footer: its buttons can
-// wrap it.
-let lineRowsAfter = (_footer: LineFooter) => lineRows;
-// The filter the list was last drawn with: a surface with no filter box draws
-// it unfiltered, and a slide must page the same rows the person sees.
-let listQuery = "";
+const drawnOn = new Map<string, Drawn>();
+const drawn = (surface: string) => {
+  const view = drawnOn.get(surface) ?? unseen();
+  // Re-inserted so the map runs from least to most recently drawn.
+  drawnOn.delete(surface);
+  drawnOn.set(surface, view);
+  return view;
+};
+// The view the arrows move in. A focus event doesn't name its surface, but
+// arrows come from a keyboard, so the latest surface with one wins over a
+// phone. ponytail: a terminal and a desktop drawing at once share the latest
+// one's rows; key the slide by surface if the engine ever names it.
+const steered = (): Drawn => {
+  const views = [...drawnOn].reverse();
+  const keyed = views.find(([surface]) => surface !== "mobile") ?? views[0];
+  return keyed?.[1] ?? unseen();
+};
 // The row the ring is on, so `l` knows which file to open line by line.
 let focusedKey = "";
 // The previewed file's lines, read once when the line view opens.
@@ -827,7 +851,9 @@ async function goTo($: EngineInterface, path: string) {
   await updateState($, "recentView", () => false);
   await updateState($, "query", () => "");
   await updateState($, "offset", () =>
-    childIndex < 0 ? 0 : windowAround(childIndex, 0, listRows, ranked.length),
+    childIndex < 0
+      ? 0
+      : windowAround(childIndex, 0, steered().listRows, ranked.length),
   );
   await focusFirst($, [
     childIndex >= 0 && child && rowKey(child),
@@ -848,7 +874,7 @@ async function ringToLine($: EngineInterface, n: number) {
 // The keys of the list's rows, in the order drawn: recent files, search hits
 // or the folder's entries, ranked by the filter they were drawn with.
 async function listKeys($: EngineInterface) {
-  const query = listQuery;
+  const query = steered().listQuery;
   if (await readState($, "recentView")) {
     const recent = await readState($, "recent");
     return recentShown(recent, query).map((hit) => hitKey(hit.path));
@@ -895,7 +921,8 @@ async function ringToToggle($: EngineInterface, target: string) {
 
 async function toggleHidden($: EngineInterface) {
   const key = focusedKey;
-  const before = await placeOf($, key, listRows);
+  const view = steered();
+  const before = await placeOf($, key, view.listRows);
   const searching = await readState($, "search");
   // The old walk's hits give way to "searching…" at once, so the h button's
   // new key is first drawn with the new walk's hits, which move the footer.
@@ -908,7 +935,7 @@ async function toggleHidden($: EngineInterface) {
       await ringToToggle($, ringAfterToggle(key, "", "", hiddenKey(shown)));
     return;
   }
-  const after = await placeOf($, key, listRowsAfter({ hidden: shown }));
+  const after = await placeOf($, key, view.listRowsAfter({ hidden: shown }));
   await ringToToggle($, ringAfterToggle(key, before, after, hiddenKey(shown)));
 }
 // The slide a "more" row's focus started, and the window it started from. A
@@ -920,15 +947,14 @@ let pendingSlide:
 
 // Arrowing onto a "more" row moves the window one row and puts the ring on
 // the row that came into view, so the arrows keep walking. Resolves to the
-// offset it slid from.
+// offset it slid from, as stored: a press clamps it to its own list.
 async function slide($: EngineInterface, by: 1 | -1) {
+  const { listRows, lineRows } = steered();
   if (previewLines) {
     const total = previewLines.lines.length;
     if (total === 0) return undefined;
-    const offset = Math.min(
-      await readState($, "lineOffset"),
-      Math.max(0, total - lineRows),
-    );
+    const from = await readState($, "lineOffset");
+    const offset = Math.min(from, Math.max(0, total - lineRows));
     const index = Math.min(
       Math.max(0, by > 0 ? offset + lineRows : offset - 1),
       total - 1,
@@ -937,13 +963,11 @@ async function slide($: EngineInterface, by: 1 | -1) {
       windowAround(index, offset, lineRows, total),
     );
     await ringToLine($, index + 1);
-    return offset;
+    return from;
   }
   const keys = await listKeys($);
-  const offset = Math.min(
-    await readState($, "offset"),
-    Math.max(0, keys.length - listRows),
-  );
+  const from = await readState($, "offset");
+  const offset = Math.min(from, Math.max(0, keys.length - listRows));
   const index = Math.min(
     Math.max(0, by > 0 ? offset + listRows : offset - 1),
     keys.length - 1,
@@ -958,7 +982,7 @@ async function slide($: EngineInterface, by: 1 | -1) {
   focusedKey = target;
   void schedulePeek($).catch(() => undefined);
   await focusFirst($, [target]);
-  return offset;
+  return from;
 }
 
 // A press on a "more" row pages from the window as it is now, or as it was
@@ -1195,6 +1219,7 @@ async function setRanges(
   kept: LineRange[],
   ringLine: number,
 ) {
+  const { lineRows, lineRowsAfter } = steered();
   const total = previewLines?.lines.length ?? 0;
   const offset = Math.min(
     await readState($, "lineOffset"),
@@ -1203,16 +1228,16 @@ async function setRanges(
   const index = ringLine - 1;
   const rows = lineRowsAfter({ anchored: anchor > 0, kept: kept.length });
   const windowStart = windowAround(index, offset, rows, total);
-  const drawn = index >= offset && index < offset + lineRows;
+  const inView = index >= offset && index < offset + lineRows;
   // "↑ N more" comes before the lines, so it counts toward the place too.
   const placeAt = (first: number) => (first > 0 ? 1 : 0) + index - first;
-  const moved = drawn && placeAt(windowStart) !== placeAt(offset);
+  const moved = inView && placeAt(windowStart) !== placeAt(offset);
   if (moved) filesAgain = !filesAgain;
   // The ranges first, as setMarks writes the marks first: the redraw between
   // the writes has the line out of view or already clamped to `windowStart`.
   await updateState($, "anchor", () => anchor);
   await updateState($, "kept", () => kept);
-  if (!drawn) return;
+  if (!inView) return;
   await updateState($, "lineOffset", () => windowStart);
   if (!moved) return;
   await focusFirst($, [filesAgain ? FILES_AGAIN : "files"]);
@@ -1234,7 +1259,12 @@ async function findInLines($: EngineInterface, query: string) {
     ]);
   lastFind = index;
   await updateState($, "lineOffset", () =>
-    windowAround(index, offset, lineRows, previewLines?.lines.length ?? 0),
+    windowAround(
+      index,
+      offset,
+      steered().lineRows,
+      previewLines?.lines.length ?? 0,
+    ),
   );
   await ringToLine($, index + 1);
 }
@@ -1289,6 +1319,7 @@ async function markFocused($: EngineInterface, surface: string) {
 // another row or a "more" button while m and l acted on the row it left.
 async function setMarks($: EngineInterface, marks: string[]) {
   const key = focusedKey;
+  const { listRows, listRowsAfter } = steered();
   const keys = await listKeys($);
   const index = keys.indexOf(key);
   const offset = Math.min(
@@ -1297,8 +1328,8 @@ async function setMarks($: EngineInterface, marks: string[]) {
   );
   const rows = listRowsAfter({ marks: marks.length });
   const kept = windowAround(index, offset, rows, keys.length);
-  const drawn = index >= offset && index < offset + listRows;
-  if (!drawn || kept === offset) {
+  const inView = index >= offset && index < offset + listRows;
+  if (!inView || kept === offset) {
     await updateState($, "marked", () => marks);
     return;
   }
@@ -1428,10 +1459,11 @@ async function schedulePeek($: EngineInterface) {
 
 async function togglePeek($: EngineInterface) {
   const key = focusedKey;
-  const before = await placeOf($, key, listRows);
+  const view = steered();
+  const before = await placeOf($, key, view.listRows);
   await updateState($, "peek", (v) => !v);
   const shown = await readState($, "peek");
-  const after = await placeOf($, key, listRowsAfter({ peek: shown }));
+  const after = await placeOf($, key, view.listRowsAfter({ peek: shown }));
   await ringToToggle($, ringAfterToggle(key, before, after, peekKey(shown)));
   await schedulePeek($);
 }
@@ -1536,6 +1568,7 @@ export const register: Register = (on) => {
     const ui = $.ui.resolve(e);
     const { rows: bodyRows, columns: bodyColumns } = paneSize(e.props);
     const compact = bodyRows < COMPACT_BELOW_ROWS;
+    const view = drawn(e.surface);
     const { Box, Text, Button, Link } = ui;
     // A table handed out is completed with every element, one a surface lacks
     // drawing nothing, so the phone's Input is there but draws no field.
@@ -1696,8 +1729,9 @@ export const register: Register = (on) => {
           bodyRows - LINES_CHROME_ROWS - (footerRows - 1) + saved,
         );
       };
-      lineRowsAfter = rowsWith;
-      lineRows = rowsWith({ anchored: anchor > 0, kept: kept.length });
+      view.lineRowsAfter = rowsWith;
+      const lineRows = rowsWith({ anchored: anchor > 0, kept: kept.length });
+      view.lineRows = lineRows;
       // The footer as drawn, which the feedback button goes after where it fits.
       const feedbackFits = fitsAfter(
         [
@@ -1886,7 +1920,7 @@ export const register: Register = (on) => {
     const showHidden = await readState($, "showHidden");
     // A filter typed on another surface can't be cleared where there is no box.
     const query = Input ? await readState($, "query") : "";
-    listQuery = query;
+    view.listQuery = query;
     const marked = await readState($, "marked");
     const markedSet = new Set(marked);
     const hiddenLabelOf = (shown: boolean) =>
@@ -1946,11 +1980,11 @@ export const register: Register = (on) => {
         const peekRows = footer.peek && fits > 0 ? fits + PEEK_CHROME_ROWS : 0;
         return { fits, rows: Math.max(1, room - peekRows) };
       };
-      listRowsAfter = (change) => rowsWith({ ...now, ...change }).rows;
-      const drawn = rowsWith(now);
-      peekFits = drawn.fits;
+      view.listRowsAfter = (change) => rowsWith({ ...now, ...change }).rows;
+      const atNow = rowsWith(now);
+      peekFits = atNow.fits;
       listFeedbackFits = fitsAfter(labelsFor(now), FEEDBACK_LABEL, bodyColumns);
-      return drawn.rows;
+      return atNow.rows;
     };
     // The last file stays up while the read for the next row waits, so the
     // arrows don't flash the hint; once nothing is pending, a preview of a
@@ -1990,7 +2024,7 @@ export const register: Register = (on) => {
       const changes = await readState($, "changes");
       const listView = recentView ? "recent" : changes ? "changes" : "search";
       const recent = recentView ? await readState($, "recent") : [];
-      listRows = listRoom((footer) => [
+      const listRows = listRoom((footer) => [
         `l: ${linesLabel}`,
         "f: folders",
         ...(recentView || changes
@@ -1999,6 +2033,7 @@ export const register: Register = (on) => {
         ...peekLabelsOf(footer.peek),
         ...markLabelsOf(footer.marks),
       ]);
+      view.listRows = listRows;
       const walk = recentView ? undefined : project?.walk;
       const note = recentView ? undefined : project?.note;
       // Every changed file shows, hidden or not: git named it.
@@ -2236,7 +2271,7 @@ export const register: Register = (on) => {
     }
 
     // Listed in the order the buttons draw, since the order decides the wraps.
-    listRows = listRoom((footer) => [
+    const listRows = listRoom((footer) => [
       `l: ${linesLabel}`,
       "s: search",
       "r: recent",
@@ -2249,6 +2284,7 @@ export const register: Register = (on) => {
       "a: @ folder",
       ...markLabelsOf(footer.marks),
     ]);
+    view.listRows = listRows;
     const pathMode = isPathQuery(query);
     const ranked = pathMode ? [] : rankEntries(listed, query, showHidden);
     // Counted by the rule the ranking uses: hidden entries count only when

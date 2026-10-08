@@ -431,7 +431,13 @@ only to ask before such a file goes into the prompt.
 The unit tests run the plugin's hooks against each surface's element table
 with Claude Code's own test kit. They don't paint anything, so the pane's
 look, its scrolling and its focus handling in each app still need checking by
-hand.
+hand. The tests also draw one session on the terminal or desktop and the
+mobile app at once, as Remote Control does: each surface pages its own list,
+with its own filter and pane size. A focus event doesn't say which surface
+it came from, so arrowing onto a `↑/↓ N more` row follows the surface with a
+keyboard that drew last; with a terminal and the desktop app open on one
+session, the arrows slide by the size of whichever drew last. None of this
+has been tried in the real apps yet.
 
 ## Develop
 
