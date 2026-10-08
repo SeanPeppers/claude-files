@@ -16,6 +16,7 @@ import {
   isShown,
   joinPath,
   mentionFor,
+  PARENT_KEY,
   PEEK_CHROME_ROWS,
   PEEK_MAX_BYTES,
   PEEK_MAX_LINES,
@@ -28,6 +29,7 @@ import {
   rankHits,
   relativeTo,
   resolveTyped,
+  ringAfterToggle,
   toggleMark,
   WALK_MAX_DEPTH,
   WALK_MAX_FILES,
@@ -38,7 +40,6 @@ import {
 } from "./rank";
 
 const PANE = "file-picker";
-const PARENT_KEY = "row:..";
 const MORE_ABOVE = "more:above";
 const MORE_BELOW = "more:below";
 // List: header, filter box (3), '..' (or search's limits line), the two "more"
@@ -435,7 +436,8 @@ function rankedHits(walk: Walk, query: string, hidden: boolean) {
 }
 
 // Starts a fresh walk of the working directory; the pane shows "searching…"
-// until it lands. A walk started later wins over an older one still running.
+// until it lands. A walk started later wins over an older one still running,
+// and the older one answers false.
 async function walkCwd($: EngineInterface) {
   const showHidden = await readState($, "showHidden");
   const root = await $.session.cwd();
@@ -446,9 +448,10 @@ async function walkCwd($: EngineInterface) {
   const walk = await walkProject(root, (dir) => $.fs.list(dir), showHidden, {
     aborted: () => project !== current,
   });
-  if (project !== current) return;
+  if (project !== current) return false;
   current.walk = walk;
   await updateState($, "walked", (n) => n + 1);
+  return true;
 }
 
 async function setSearch($: EngineInterface, enabled: boolean) {
@@ -578,17 +581,39 @@ async function placeOf($: EngineInterface, key: string, rows: number) {
   return index >= offset && index < offset + rows ? `${index}@${offset}` : "";
 }
 
-const isListRow = (key: string) =>
-  (key.startsWith("row:") && key !== PARENT_KEY) || key.startsWith("hit:");
+// The p and h buttons' keys name what a press does next, so each press draws
+// its button under a key the screen doesn't hold yet.
+const peekKey = (shown: boolean) => (shown ? "hide-peek" : "peek");
+const hiddenKey = (shown: boolean) => (shown ? "hide-hidden" : "hidden");
 
-// A redraw keeps the focus ring at its place in the pane's order, not on its
-// row, and a focus asked for before the redraw lands would land by the old
-// order. So when p or h moves the highlighted row, the ring goes to the filter,
-// the one place no redraw moves; left alone it would sit on another row (or a
-// footer button) while l, m and the preview acted on the row it left.
-async function parkRing($: EngineInterface) {
-  focusedKey = "filter";
-  await focusFirst($, ["filter"]);
+// Puts the ring on `target` from ringAfterToggle ("" leaves it). Left on a
+// place the redraw moved, it would sit on another row or button while l, m
+// and Enter acted on the one it left. A focus on a key already drawn lands by
+// the order on screen, which the redraw then shifts; one on a key not drawn
+// yet, as the pressed button's next key is, waits for the redraw that draws it.
+async function ringToToggle($: EngineInterface, target: string) {
+  if (!target) return;
+  focusedKey = target;
+  await focusFirst($, [target]);
+}
+
+async function toggleHidden($: EngineInterface) {
+  const key = focusedKey;
+  const before = await placeOf($, key, listRows);
+  const searching = await readState($, "search");
+  // The old walk's hits give way to "searching…" at once, so the h button's
+  // new key is first drawn with the new walk's hits, which move the footer.
+  if (searching) project = {};
+  await updateState($, "showHidden", (v) => !v);
+  const shown = await readState($, "showHidden");
+  // Hidden folders are only walked when hidden files show.
+  if (searching) {
+    if (await walkCwd($))
+      await ringToToggle($, ringAfterToggle(key, "", "", hiddenKey(shown)));
+    return;
+  }
+  const after = await placeOf($, key, listRows);
+  await ringToToggle($, ringAfterToggle(key, before, after, hiddenKey(shown)));
 }
 
 // Arrowing onto a "more" row moves the window one row and puts the ring on
@@ -918,12 +943,12 @@ async function schedulePeek($: EngineInterface) {
 
 async function togglePeek($: EngineInterface) {
   const key = focusedKey;
-  const before = isListRow(key) ? await placeOf($, key, listRows) : "";
+  const before = await placeOf($, key, listRows);
   await updateState($, "peek", (v) => !v);
-  const rows = (await readState($, "peek"))
-    ? listRowsIfPeek.on
-    : listRowsIfPeek.off;
-  if (before && (await placeOf($, key, rows)) !== before) await parkRing($);
+  const shown = await readState($, "peek");
+  const rows = shown ? listRowsIfPeek.on : listRowsIfPeek.off;
+  const after = await placeOf($, key, rows);
+  await ringToToggle($, ringAfterToggle(key, before, after, peekKey(shown)));
   await schedulePeek($);
 }
 
@@ -1189,24 +1214,14 @@ export const register: Register = (on) => {
       "m: mark",
       ...(marked.length > 0 ? [`i: insert ${marked.length} marked`] : []),
     ];
+    const walking = (await readState($, "search")) && !project?.walk;
     const hiddenButton = (
       <Button
-        key="hidden"
+        key={walking ? "hidden-walking" : hiddenKey(showHidden)}
         plain
         hotkey="h"
         dimColor
-        onPress={async () => {
-          const key = focusedKey;
-          const before = isListRow(key) ? await placeOf($, key, listRows) : "";
-          await updateState($, "showHidden", (v) => !v);
-          // Hidden folders are only walked when hidden files show; the walk
-          // draws the results anew.
-          if (await readState($, "search")) {
-            await walkCwd($);
-            if (before) await parkRing($);
-          } else if (before && (await placeOf($, key, listRows)) !== before)
-            await parkRing($);
-        }}
+        onPress={() => toggleHidden($)}
       >
         {hiddenLabel}
       </Button>
@@ -1219,7 +1234,7 @@ export const register: Register = (on) => {
     const peekLabel = peekLabelOf(peeking);
     const peekButton = (
       <Button
-        key="peek"
+        key={peekKey(peeking)}
         plain
         hotkey="p"
         dimColor

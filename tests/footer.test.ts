@@ -125,7 +125,7 @@ for (const [COLUMNS, BODY_ROWS] of [
       previewed = (await ui.find({ text: /^line 1$/ })) !== undefined;
     expect(previewed).toBe(COLUMNS >= 40 && BODY_ROWS >= 20);
     expect(heightOf(await ui.drawn(), COLUMNS)).toBeLessThanOrEqual(BODY_ROWS);
-    await ui.press({ key: "peek" });
+    await ui.press({ key: "hide-peek" });
 
     await focus("row:f01.ts");
     await ui.press({ key: "lines" });

@@ -1,6 +1,6 @@
 import { expect, mock, test } from "claude-code/testing";
 
-import { PEEK_MAX_BYTES } from "../hooks/rank";
+import { PEEK_MAX_BYTES, ringAfterToggle } from "../hooks/rank";
 import { posix } from "./posix";
 
 // Edge cases for the browsing preview: odd names, links to secrets, size
@@ -328,17 +328,21 @@ test("a pane that grows shows more of the previewed file without reading again",
   await ui.unmount();
 });
 
+const fortyFiles = () => {
+  const files: Record<string, string> = {};
+  for (let i = 0; i < 40; i++)
+    files[`f${String(i).padStart(2, "0")}.txt`] = `body ${i}\n`;
+  return files;
+};
+
 const drawnRows = async (ui: any) =>
   (await ui.findAll({ type: "Button" }))
     .map((b: any) => b.key)
     .filter((k: string) => k?.startsWith("row:") && k !== "row:..");
 
-test("p that pushes the highlighted row out of view puts the ring on the filter", async ($, on) => {
+test("p that pushes the highlighted row out of view puts the ring on the p button", async ($, on) => {
   const clock = mock.clock(on);
-  const files: Record<string, string> = {};
-  for (let i = 0; i < 40; i++)
-    files[`f${String(i).padStart(2, "0")}.txt`] = `body ${i}\n`;
-  const log = wire(on, { [ROOT]: files });
+  const log = wire(on, { [ROOT]: fortyFiles() });
   const ui = await mount($);
   const last = (await drawnRows(ui)).at(-1);
   await arrowOnto($, last);
@@ -348,26 +352,70 @@ test("p that pushes the highlighted row out of view puts the ring on the filter"
   await ui.press({ key: "mark" });
   expect(log.toasts.at(-1)).toMatch(/Arrow onto a file first/);
   expect(log.reads).toEqual([]);
+  await ui.press({ key: "hide-peek" });
+  expect(await ui.find({ key: "peek:box" })).toBeUndefined();
+  await ui.unmount();
+});
+
+// The engine keeps the ring at its place in the pane's order across a redraw,
+// while the test kit keeps it by key and doesn't route the plugin's own focus
+// requests. So the rule for where the ring goes is checked on its own, and the
+// buttons are checked to draw under a key the screen didn't hold, which a
+// focus waits for instead of landing by the old order.
+test("p and h send a ring the redraw would move to the button pressed", () => {
+  // A row that stays put, the filter and '..' keep it.
+  expect(ringAfterToggle("row:a.ts", "3@0", "3@0", "hide-peek")).toBe("");
+  expect(ringAfterToggle("filter", "", "", "hide-peek")).toBe("");
+  expect(ringAfterToggle("row:..", "", "", "hidden")).toBe("");
+  // A row pushed out or moved, a footer or "more" button, or nothing: the
+  // pressed button, never the filter, which would type the next p or h.
+  expect(ringAfterToggle("row:z.ts", "18@0", "", "hide-peek")).toBe(
+    "hide-peek",
+  );
+  expect(ringAfterToggle("row:c.ts", "1@0", "2@0", "hide-hidden")).toBe(
+    "hide-hidden",
+  );
+  expect(ringAfterToggle("peek", "", "", "hide-peek")).toBe("hide-peek");
+  expect(ringAfterToggle("hide-peek", "", "", "peek")).toBe("peek");
+  expect(ringAfterToggle("more:below", "", "", "peek")).toBe("peek");
+  expect(ringAfterToggle("", "", "", "hidden")).toBe("hidden");
+});
+
+test("p and h draw their buttons under new keys and keep working", async ($, on) => {
+  mock.clock(on);
+  const log = wire(on, { [ROOT]: { ".a": "x\n", ...fortyFiles() } });
+  const ui = await mount($);
+  await arrowOnto($, "peek");
+  await ui.press({ key: "peek" });
+  expect(await ui.find({ key: "peek" })).toBeUndefined();
+  expect(await ui.find({ key: "peek:box" })).toBeDefined();
+  await ui.press({ key: "hide-peek" });
+  expect(await ui.find({ key: "hide-peek" })).toBeUndefined();
+  expect(await ui.find({ key: "peek:box" })).toBeUndefined();
+  await arrowOnto($, "hidden");
+  await ui.press({ key: "hidden" });
+  expect(await ui.find({ key: "row:.a" })).toBeDefined();
+  await ui.press({ key: "hide-hidden" });
+  expect(await ui.find({ key: "row:.a" })).toBeUndefined();
+  await ui.press({ key: "mark" });
+  expect(log.toasts.at(-1)).toMatch(/Arrow onto a file first/);
   await ui.unmount();
 });
 
 test("p leaves the ring on a row that stays where it was", async ($, on) => {
   const clock = mock.clock(on);
-  const files: Record<string, string> = {};
-  for (let i = 0; i < 40; i++)
-    files[`f${String(i).padStart(2, "0")}.txt`] = `body ${i}\n`;
-  wire(on, { [ROOT]: files });
+  wire(on, { [ROOT]: fortyFiles() });
   const ui = await mount($);
   await arrowOnto($, "row:f01.txt");
   await ui.press({ key: "peek" });
   expect(await rest(clock, ui, /^body 1$/)).toBeDefined();
-  await ui.press({ key: "peek" });
+  await ui.press({ key: "hide-peek" });
   await ui.press({ key: "mark" });
   expect(await ui.find({ text: "✓ f01.txt" })).toBeDefined();
   await ui.unmount();
 });
 
-test("h that moves the highlighted row puts the ring on the filter", async ($, on) => {
+test("h that moves the highlighted row puts the ring on the h button", async ($, on) => {
   mock.clock(on);
   const log = wire(on, { [ROOT]: { ".a": "x\n", "c.ts": "c\n" } });
   const ui = await mount($);
@@ -389,13 +437,6 @@ test("h that leaves the highlighted row in place keeps the ring on it", async ($
   expect(await ui.find({ text: "✓ c.ts" })).toBeDefined();
   await ui.unmount();
 });
-
-const fortyFiles = () => {
-  const files: Record<string, string> = {};
-  for (let i = 0; i < 40; i++)
-    files[`f${String(i).padStart(2, "0")}.txt`] = `body ${i}\n`;
-  return files;
-};
 
 test("p in a pane too short for the preview leaves the ring on the last row", async ($, on) => {
   mock.clock(on);
@@ -435,8 +476,8 @@ test("p and h with the ring on '..' or on nothing keep working", async ($, on) =
   await ui.press({ key: "peek" });
   await ui.press({ key: "hidden" });
   await arrowOnto($, "row:..");
-  await ui.press({ key: "hidden" });
-  await ui.press({ key: "peek" });
+  await ui.press({ key: "hide-hidden" });
+  await ui.press({ key: "hide-peek" });
   await ui.press({ key: "peek" });
   await arrowOnto($, "row:c.ts");
   expect(await rest(clock, ui, /^c$/)).toBeDefined();
@@ -446,7 +487,7 @@ test("p and h with the ring on '..' or on nothing keep working", async ($, on) =
   await ui.unmount();
 });
 
-test("h in search with the ring on a hit puts the ring on the filter", async ($, on) => {
+test("h in search with the ring on a hit puts the ring on the h button once the walk lands", async ($, on) => {
   mock.clock(on);
   const log = wire(on, {
     [ROOT]: { ".hid": null, "a.ts": "a\n" },

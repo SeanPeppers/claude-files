@@ -15,7 +15,7 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   project or files over 64 KiB; each gets a one-line notice instead. The
   preview shows only in a pane of at least 20 rows and 40 columns. When
   turning it on or off moves the highlighted row, the highlight goes to the
-  filter box.
+  `p` button, so a second `p` turns it off again.
 
 ### Fixed
 
@@ -25,8 +25,11 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - After `h` the highlight stayed at the same place on the screen while the
   rows moved under it, so it sat on another row while `l` and `m` answered
   "Arrow onto a file first". When `h` moves the highlighted row, the
-  highlight now goes to the filter box; when the row stays put, it stays on
-  it and `l` and `m` act on it.
+  highlight now goes to the `h` button, so a second `h` undoes it; when the
+  row stays put, it stays on it and `l` and `m` act on it. A highlight on a
+  footer or "more" button goes to the `h` button too, where before it slid
+  onto whatever took its place on the screen while `l`, `m` and Enter still
+  acted on the button it had been on.
 
 ## [0.4.3] - 2026-10-07
 

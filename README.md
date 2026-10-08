@@ -158,8 +158,9 @@ always `/`, which Windows accepts too.
 **Focus.** The letter keys work while the pane has the keyboard. After a file
 is added the keyboard goes back to the prompt so you can keep typing; click the
 pane or press `ctrl+x` then `Tab` to return. When `h` or `p` moves the
-highlighted row (hidden files appear above it, or the preview pushes it out of
-view), the highlight goes to the filter box.
+highlight (hidden files appear above it, the preview pushes its row out of
+view, or the list under a footer button grows or shrinks), the highlight goes
+to the button pressed, so pressing it again undoes it.
 
 The folder is listed when you open it; reopen `/files` to see files added since.
 

@@ -547,3 +547,23 @@ export const headLines = (text: string, count: number) => {
   }
   return lines;
 };
+
+// The '..' row's key, drawn above the folder's rows.
+export const PARENT_KEY = "row:..";
+
+// Where the focus ring goes once p or h redraws the list: "" leaves it, else
+// it goes to `pressed`, the key the pressed button is drawn under next. The
+// engine keeps the ring at its place in the pane's order, not on its element,
+// so only what sits above the list (the filter, '..') and a row whose place
+// is unchanged (`before` and `after`, index@first row, "" when not drawn) keep
+// theirs. The filter is no place to send it: it would take the next p or h as
+// text.
+export const ringAfterToggle = (
+  key: string,
+  before: string,
+  after: string,
+  pressed: string,
+) =>
+  key === "filter" || key === PARENT_KEY || (before !== "" && before === after)
+    ? ""
+    : pressed;
