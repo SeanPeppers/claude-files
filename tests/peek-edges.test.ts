@@ -298,3 +298,25 @@ test("two focus events landing together read once, after the rest", async ($, on
   expect(log.reads).toEqual(["/p/c.ts"]);
   await ui.unmount();
 });
+
+test("a pane that grows shows more of the previewed file without reading again", async ($, on) => {
+  const clock = mock.clock(on);
+  const body = Array.from({ length: 20 }, (_, i) => `row ${i + 1}`).join("\n");
+  const log = wire(on, { [ROOT]: { "a.ts": body } });
+  const ui = await mount($, 22);
+  await ui.press({ key: "peek" });
+  await arrowOnto($, "row:a.ts");
+  expect(await rest(clock, ui, /^row 1$/)).toBeDefined();
+  expect(await ui.find({ text: /^row 10$/ })).toBeUndefined();
+  await ui.redraw({
+    title: "Files",
+    isFocused: true,
+    bodyColumns: 80,
+    placement: "dock",
+    scroll: { offset: 0, bodyRows: 40 },
+    view: {},
+  });
+  expect(await ui.find({ text: /^row 10$/ })).toBeDefined();
+  expect(log.reads).toEqual(["/p/a.ts"]);
+  await ui.unmount();
+});

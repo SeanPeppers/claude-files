@@ -516,7 +516,7 @@ export const rankHits = (
 // Browsing preview: files over PEEK_MAX_BYTES aren't read at all, since
 // `$.fs.read` has no limit short of the whole file.
 export const PEEK_MAX_BYTES = 64 * 1024;
-const PEEK_MAX_LINES = 10;
+export const PEEK_MAX_LINES = 10;
 const PEEK_MIN_LINES = 3;
 // The preview's file name line and the blank row above it.
 export const PEEK_CHROME_ROWS = 2;

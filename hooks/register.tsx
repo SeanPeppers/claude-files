@@ -18,6 +18,7 @@ import {
   mentionFor,
   PEEK_CHROME_ROWS,
   PEEK_MAX_BYTES,
+  PEEK_MAX_LINES,
   parentOf,
   peekLines,
   previewLine,
@@ -854,7 +855,8 @@ async function peekAt($: EngineInterface, path: string) {
   }
   if (isBinaryText(text)) return notice("binary file");
   if (text === "") return notice("(empty file)");
-  return { lines: headLines(text, peekFits), notice: "" };
+  // As many lines as the preview ever shows, so a pane that grows fills up.
+  return { lines: headLines(text, PEEK_MAX_LINES), notice: "" };
 }
 
 async function loadPeek($: EngineInterface) {
