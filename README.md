@@ -114,6 +114,7 @@ To update later: `claude plugin update file-picker@claude-files`.
 | `i` | insert every marked file at once (`@src/a.ts @"my notes.md" @docs/b.md`) and clear the marks |
 | `s` | search the whole project (see below) |
 | `p` | show or hide a preview of the highlighted file under the list: its first lines, once the arrows rest on it. Off until you press it, then on until the session ends. Secrets files, binary files, links that lead out of the project and files over 64 KiB get a one-line notice instead |
+| `g` | list the files git sees as changed or untracked (see below) |
 | `Esc` | close the pane |
 
 **Project search** (after `s`)
@@ -132,6 +133,24 @@ folders (unless hidden files are shown), never follows linked folders, and
 stops at 12 folder levels, 5,000 folders listed or 20,000 files; the pane
 says when it stopped early. Press `s` again from the folder list to see files
 added since.
+
+**Git changes** (after `g`)
+
+| Key | Does |
+|---|---|
+| type | filter the changed files, ranked as in project search; each row shows git's status (`M` modified, `A` added, `R` renamed, `??` untracked, `UU` conflicted) |
+| `Enter` / `l` / `m` | add the file, pick its lines or mark it, exactly as in a folder |
+| `f` | back to the folder list |
+
+`g` runs `git status` once (see [Safety](#safety)) from the repository that
+holds the working directory, so from a subfolder it lists the whole
+repository's changes; paths are shown relative to the repository root.
+Untracked files are listed one by one, hidden ones included; files deleted
+from the working tree are left out, since there is nothing to mention, and a
+renamed file shows under its new name. Outside a repository, or when git is
+missing or fails, the pane says so. The list stops at 20,000 files (or 4 MiB
+of git output) and says when it did. Press `g` again from the folder list to
+see changes made since.
 
 **Lines** (after `l`)
 
@@ -177,8 +196,18 @@ with the preview on, when the arrows rest on it** (to draw its first lines under
 the list), and inserts text into your prompt. The preview is off until you press
 `p`; it reads only files up to 64 KiB, and never reads a secrets file (below,
 even one you said yes to) or a link that leads out of the project. What it shows
-stays on your screen: nothing it reads goes into the prompt. It
-never writes files, runs commands or touches the network, never reads your
+stays on your screen: nothing it reads goes into the prompt. When you press `g`
+it runs one command, in the repository root, with no shell:
+
+```
+git --no-optional-locks -c core.fsmonitor=false status --porcelain=v1 -z --untracked-files=all --ignore-submodules=all
+```
+
+It only reads: optional locks are off so git doesn't refresh its index file,
+`core.fsmonitor` is off so a repository's own config can't make git start
+another program, submodules are ignored so git doesn't run itself inside
+them, and Claude Code turns repository hooks off for every git it runs. It
+runs no other command. It never writes files or touches the network, never reads your
 Claude Code settings, and nothing is sent until you press Enter on the prompt
 yourself.
 
@@ -227,20 +256,21 @@ changes what Claude or its tools do; they only add the pane.
 |---|---|
 | `session.start` | registers the `/files` command |
 | `command.run` (`/files` only) | opens the Files pane with an empty filter. It is matched to the `/files` command, so it never sees or changes any other command |
-| `ui.render` (the Files pane) | draws the folder list, the project search, the line view or the secrets confirmation |
+| `ui.render` (the Files pane) | draws the folder list, the project search, the git changes list, the line view or the secrets confirmation |
 | `ui.focus` (the Files pane) | remembers the highlighted row for `l`, `m` and the preview, and when the arrows reach a `↑/↓ N more` row, slides the list one row. With the preview on, it starts a short timer whose end reads the highlighted file |
 
 Engine calls it makes: `$.command.register` (the `/files` command),
-`$.fs.list` and `$.fs.stat` (folder listings and file types; project search is `$.fs.list` alone, one folder per call),
+`$.fs.list` and `$.fs.stat` (folder listings and file types; project search is `$.fs.list` alone, one folder per call; `g` also stats `.git` in the working directory and each folder above it to find the repository root),
+`$.process.run` (only the one `git status` command above, only when you press `g`),
 `$.fs.read` (the file you press `l` on, up to 4 MiB, and with the preview on,
 the highlighted file, up to 64 KiB), `$.clock.after` (waits 120 ms for the
 arrows to rest before the preview reads),
 `$.prompt.fill` (insert the mention), `$.session.cwd`, `$.ui.*` (pane, focus,
 toasts) and `$.state` (the pane's own session state: folder, filter, scroll
-position, search mode, the open file, the range start, the marked files and
-whether the preview is on). It
+position, search or changes mode, the open file, the range start, the marked
+files and whether the preview is on). It
 reads no environment variables, tokens or Claude Code settings, and it makes
-no network requests: `claude plugin validate` shows no `env reads:` line and no
+no network requests (`git status` reads only local files): `claude plugin validate` shows no `env reads:` line and no
 network calls. The list of secrets file names under [Safety](#safety) is used
 only to ask before such a file goes into the prompt.
 
@@ -278,7 +308,7 @@ Dependabot keeps the pinned actions current.
 | File | What |
 |---|---|
 | `hooks/register.tsx` | `/files`, the pane, the line view, focus handling, picking |
-| `hooks/rank.ts` | pure helpers: ranking, the project walk, paths, mentions, secrets check, the list window |
+| `hooks/rank.ts` | pure helpers: ranking, the project walk, `git status` parsing, paths, mentions, secrets check, the list window |
 | `types/index.d.ts` | the session state the pane keeps |
 | `tests/` | unit, hardening (hostile names, Windows paths), line view, project search and UI tests |
 | `CHANGELOG.md` | what changed in each version |

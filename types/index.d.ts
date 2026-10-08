@@ -17,6 +17,7 @@ declare module "claude-code" {
       walked: number;
       peek: boolean;
       peeked: number;
+      changes: boolean;
     };
   }
 }

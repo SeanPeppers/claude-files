@@ -60,7 +60,7 @@ for (const [COLUMNS, BODY_ROWS] of [
   [40, 9],
   [90, 11],
 ] as const)
-  test(`list, search and lines stay within ${BODY_ROWS} rows at ${COLUMNS} columns`, async ($, on) => {
+  test(`list, search, changes and lines stay within ${BODY_ROWS} rows at ${COLUMNS} columns`, async ($, on) => {
     on("session.cwd", () => ({ value: "/p" }));
     on("fs.list", (_: any, e: any) => {
       const dir = posix(e.path);
@@ -80,6 +80,15 @@ for (const [COLUMNS, BODY_ROWS] of [
     }));
     on("fs.stat", () => ({
       value: { kind: "file", size: 1, mtimeMs: 0, isLink: false },
+    }));
+    on("process.run", () => ({
+      value: {
+        exitCode: 0,
+        stdout: NAMES.map((name) => `?? ${name}\0`).join(""),
+        stderr: "",
+        isStdoutTruncated: false,
+        isStderrTruncated: false,
+      },
     }));
     on("ui.focus", () => ({}));
     on("ui.toast", () => ({ value: undefined }));
@@ -123,6 +132,16 @@ for (const [COLUMNS, BODY_ROWS] of [
 
     await ui.press({ key: "search" });
     let landed = false;
+    for (let i = 0; i < 200 && !landed; i++)
+      landed = (await ui.find({ key: "hit:/p/f00.ts" })) !== undefined;
+    expect(landed).toBe(true);
+    await ui.press({ key: "more:below" });
+    expect(await ui.find({ key: "more:above" })).toBeDefined();
+    expect(heightOf(await ui.drawn(), COLUMNS)).toBeLessThanOrEqual(BODY_ROWS);
+
+    await ui.press({ key: "folders" });
+    await ui.press({ key: "changes" });
+    landed = false;
     for (let i = 0; i < 200 && !landed; i++)
       landed = (await ui.find({ key: "hit:/p/f00.ts" })) !== undefined;
     expect(landed).toBe(true);

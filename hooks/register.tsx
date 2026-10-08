@@ -1,6 +1,7 @@
 import type { EngineInterface, PluginState, Register } from "claude-code";
 import type { Entry, Hit, LineRange, Walk } from "./rank";
 import {
+  ancestorsOf,
   baseName,
   displayName,
   findLine,
@@ -20,6 +21,7 @@ import {
   PEEK_MAX_BYTES,
   parentOf,
   peekLines,
+  parseGitStatus,
   previewLine,
   rangeLabel,
   rangeOf,
@@ -81,6 +83,8 @@ const WALKED_STATE = { plugin: "file-picker", key: "walked" } as const;
 // preview read lands, so the pane redraws.
 const PEEK_STATE = { plugin: "file-picker", key: "peek" } as const;
 const PEEKED_STATE = { plugin: "file-picker", key: "peeked" } as const;
+// Whether that list is git's changed files instead of the whole project.
+const CHANGES_STATE = { plugin: "file-picker", key: "changes" } as const;
 
 // Rows of the list or of the file that fit in the pane, as last drawn. Both
 // are drawn a window at a time: a pane taller than its tree takes the arrows
@@ -126,6 +130,7 @@ const INITIAL: State = {
   walked: 0,
   peek: false,
   peeked: 0,
+  changes: false,
 };
 
 // The plugin directory lets `$` go only to functions declared in this file,
@@ -245,6 +250,13 @@ async function heldState<K extends keyof State>(
       const held = await $.state.get(PEEKED_STATE);
       return {
         value: (held.value ?? INITIAL.peeked) as State[K],
+        version: held.version,
+      };
+    }
+    case "changes": {
+      const held = await $.state.get(CHANGES_STATE);
+      return {
+        value: (held.value ?? INITIAL.changes) as State[K],
         version: held.version,
       };
     }
@@ -371,6 +383,13 @@ async function writeState<K extends keyof State>(
       });
       return done.isSet;
     }
+    case "changes": {
+      const next = value as State["changes"];
+      const done = await $.state.set(CHANGES_STATE, next, {
+        ifVersion: version,
+      });
+      return done.isSet;
+    }
   }
   throw new Error(`unknown state ${key}`);
 }
@@ -416,7 +435,10 @@ async function listDir($: EngineInterface, dir: string) {
 // The project's files, walked once when search starts (or hidden files are
 // toggled during it), and the last ranking of them: ranking 20,000 paths on
 // every redraw would lag typing.
-let project: { walk?: Walk } | undefined;
+// For git's changed files, `root` is the repository's and `note` says why
+// there's no list.
+type Project = { walk?: Walk; root?: string; note?: string };
+let project: Project | undefined;
 let ranking:
   | { walk: Walk; query: string; hidden: boolean; hits: Hit[] }
   | undefined;
@@ -436,7 +458,7 @@ function rankedHits(walk: Walk, query: string, hidden: boolean) {
 async function walkCwd($: EngineInterface) {
   const showHidden = await readState($, "showHidden");
   const root = await $.session.cwd();
-  const current: { walk?: Walk } = {};
+  const current: Project = {};
   project = current;
   focusedKey = "";
   // A walk superseded by a later one (f, h, reopening) stops listing.
@@ -448,13 +470,70 @@ async function walkCwd($: EngineInterface) {
   await updateState($, "walked", (n) => n + 1);
 }
 
-async function setSearch($: EngineInterface, enabled: boolean) {
+// The one command the plugin runs. Read-only: optional locks off, so status
+// doesn't refresh the index; fsmonitor off, since a repository's own config
+// could name a program for it; submodules ignored, so git starts no other
+// git. The engine turns repository hooks off for every git it runs.
+const GIT_STATUS_ARGV = [
+  "git",
+  "--no-optional-locks",
+  "-c",
+  "core.fsmonitor=false",
+  "status",
+  "--porcelain=v1",
+  "-z",
+  "--untracked-files=all",
+  "--ignore-submodules=all",
+] as const;
+
+// Lists git's changed and untracked files in place of a project walk. The
+// repository root is found by looking for `.git` above the working directory,
+// since porcelain paths are relative to it and no second git command is run.
+async function gitCwd($: EngineInterface) {
+  const cwd = await $.session.cwd();
+  const current: Project = {};
+  project = current;
+  focusedKey = "";
+  for (const dir of ancestorsOf(cwd)) {
+    const marker = joinPath(dir, ".git");
+    const found = await $.fs.stat(marker).catch(() => undefined);
+    if (found) {
+      current.root = dir;
+      break;
+    }
+  }
+  const root = current.root;
+  if (!root) current.note = "Not inside a git repository";
+  else {
+    const init = { cwd: root };
+    try {
+      const ran = await $.process.run(GIT_STATUS_ARGV, init);
+      if (ran.exitCode === 0)
+        current.walk = parseGitStatus(root, ran.stdout, ran.isStdoutTruncated);
+      else
+        current.note = `git status failed: ${ran.stderr.trim().split("\n")[0] || `exit ${ran.exitCode}`}`;
+    } catch (err) {
+      current.note = `Couldn't run git: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  }
+  if (project !== current) return;
+  await updateState($, "walked", (n) => n + 1);
+}
+
+// `changes`: the list is git's changed files rather than the project walk.
+async function setSearch(
+  $: EngineInterface,
+  enabled: boolean,
+  changes = false,
+) {
   project = undefined;
   focusedKey = "";
   await updateState($, "search", () => enabled);
+  await updateState($, "changes", () => enabled && changes);
   await updateState($, "query", () => "");
   await updateState($, "offset", () => 0);
-  if (enabled) void walkCwd($).catch(() => undefined);
+  if (enabled && changes) void gitCwd($).catch(() => undefined);
+  else if (enabled) void walkCwd($).catch(() => undefined);
   await focusFirst($, ["filter"]);
 }
 
@@ -571,11 +650,12 @@ async function slide($: EngineInterface, by: 1 | -1) {
   const query = await readState($, "query");
   const walk = project?.walk;
   const searching = await readState($, "search");
+  // Every changed file shows, hidden or not: git named it.
+  const hidden =
+    (await readState($, "changes")) || (await readState($, "showHidden"));
   const keys = searching
     ? walk
-      ? rankedHits(walk, query, await readState($, "showHidden")).map((hit) =>
-          hitKey(hit.path),
-        )
+      ? rankedHits(walk, query, hidden).map((hit) => hitKey(hit.path))
       : []
     : (await rankedIn($, await currentDir($), query)).map((entry) =>
         rowKey(entry.name),
@@ -1216,11 +1296,12 @@ export const register: Register = (on) => {
     if (await readState($, "search")) {
       // Read so the pane redraws when the walk lands.
       await readState($, "walked");
+      const changes = await readState($, "changes");
       const footerRows = wrappedRows(
         [
           "l: lines",
           "f: folders",
-          `h: ${hiddenLabel}`,
+          ...(changes ? [] : [`h: ${hiddenLabel}`]),
           `p: ${peekLabel}`,
           ...markLabels,
         ],
@@ -1228,7 +1309,9 @@ export const register: Register = (on) => {
       );
       listRows = listRoom(footerRows);
       const walk = project?.walk;
-      const hits = walk ? rankedHits(walk, query, showHidden) : [];
+      const note = project?.note;
+      // Every changed file shows, hidden or not: git named it.
+      const hits = walk ? rankedHits(walk, query, changes || showHidden) : [];
       const offset = Math.min(
         await readState($, "offset"),
         Math.max(0, hits.length - listRows),
@@ -1253,7 +1336,9 @@ export const register: Register = (on) => {
         <Box flexDirection="column">
           <Box flexDirection="row" justifyContent="space-between">
             <Text bold color="claude" wrap="truncate-start">
-              {`search ${relative(cwd)}`}
+              {changes
+                ? `changes ${relative(project?.root || cwd)}`
+                : `search ${relative(cwd)}`}
             </Text>
             <Text dimColor>
               {!walk
@@ -1272,7 +1357,11 @@ export const register: Register = (on) => {
               <Input
                 key="filter"
                 autoFocus
-                placeholder="type a file name to search the whole project"
+                placeholder={
+                  changes
+                    ? "type to filter the changed files"
+                    : "type a file name to search the whole project"
+                }
                 value={query}
                 submitLabel="add"
                 onInput={(value: string) =>
@@ -1305,13 +1394,22 @@ export const register: Register = (on) => {
               {`↑ ${offset} more`}
             </Button>
           )}
-          {(!walk || hits.length === 0) && (
+          {note && (
+            <Text color="warning" wrap="truncate-end">
+              {displayName(note)}
+            </Text>
+          )}
+          {!note && (!walk || hits.length === 0) && (
             <Text dimColor italic>
               {!walk
-                ? "searching…"
+                ? changes
+                  ? "reading git status…"
+                  : "searching…"
                 : query
                   ? `no match for "${query}"`
-                  : "(no files)"}
+                  : changes
+                    ? "(no changes)"
+                    : "(no files)"}
             </Text>
           )}
           {shown.map((hit, i) => (
@@ -1332,7 +1430,11 @@ export const register: Register = (on) => {
                   Math.max(10, e.props.bodyColumns - 8),
                 )}
               </Button>
-              {!hit.isLink && <Text dimColor>{humanSize(hit.size)}</Text>}
+              {hit.status ? (
+                <Text dimColor>{hit.status}</Text>
+              ) : (
+                !hit.isLink && <Text dimColor>{humanSize(hit.size)}</Text>
+              )}
             </Box>
           ))}
           {below > 0 && (
@@ -1370,7 +1472,7 @@ export const register: Register = (on) => {
             >
               folders
             </Button>
-            {hiddenButton}
+            {!changes && hiddenButton}
             {peekButton}
             <Button
               key="mark"
@@ -1427,6 +1529,7 @@ export const register: Register = (on) => {
       [
         "l: lines",
         "s: search project",
+        "g: changes",
         "u: up",
         ...(prevDir && prevDir !== dir ? ["b: back"] : []),
         "c: cwd",
@@ -1595,6 +1698,15 @@ export const register: Register = (on) => {
             onPress={() => setSearch($, true)}
           >
             search project
+          </Button>
+          <Button
+            key="changes"
+            plain
+            hotkey="g"
+            dimColor
+            onPress={() => setSearch($, true, true)}
+          >
+            changes
           </Button>
           <Button
             plain

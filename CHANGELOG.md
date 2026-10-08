@@ -14,6 +14,13 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   previewed (even after a yes), nor binary files, links that lead out of the
   project or files over 64 KiB; each gets a one-line notice instead. The
   preview shows only in a pane of at least 20 rows and 40 columns.
+- `g` lists the files git sees as changed or untracked, with their status
+  (`M`, `A`, `R`, `??`, `UU`), filtered and picked like project search
+  results: Enter, `l` and `m` work on them. It runs one read-only command,
+  `git status --porcelain=v1 -z` (with optional locks, fsmonitor and
+  submodules off), from the repository root, and no other; the README's
+  Safety section names it in full. Outside a repository, or when git is
+  missing or fails, the pane says why.
 
 ## [0.4.3] - 2026-10-07
 
