@@ -31,6 +31,7 @@ import {
   PEEK_CHROME_ROWS,
   PEEK_MAX_BYTES,
   PEEK_MAX_LINES,
+  paneSize,
   parentOf,
   parseGitStatus,
   peekLines,
@@ -48,6 +49,7 @@ import {
   resolveTyped,
   ringAfterToggle,
   scrubMessage,
+  spareRows,
   toggleMark,
   WALK_MAX_DEPTH,
   WALK_MAX_FILES,
@@ -74,9 +76,8 @@ const LINES_CHROME_ROWS = 10;
 // A short pane (an inline band under the transcript reports about 11 rows)
 // can't fit that chrome plus a list, and a tree taller than the pane makes the
 // arrows scroll it. There the filter box loses its border, the footer its
-// margin and the hint line goes: 4 rows the list gets back.
+// margin and the hint line goes (spareRows).
 const COMPACT_BELOW_ROWS = 20;
-const COMPACT_SAVES_ROWS = 4;
 // '' means the session's working directory, resolved at draw time.
 const DIR_STATE = { plugin: "file-picker", key: "dir" } as const;
 const PREVDIR_STATE = { plugin: "file-picker", key: "prevDir" } as const;
@@ -1444,10 +1445,16 @@ export const register: Register = (on) => {
 
   on("ui.render", { component: "Pane", requestId: PANE }, async ($, e) => {
     const ui = $.ui.resolve(e);
-    const compact = e.props.scroll.bodyRows < COMPACT_BELOW_ROWS;
-    const saved = compact ? COMPACT_SAVES_ROWS : 0;
+    const { rows: bodyRows, columns: bodyColumns } = paneSize(e.props);
+    const compact = bodyRows < COMPACT_BELOW_ROWS;
     const { Box, Text, Button, Link } = ui;
-    const Input = "Input" in ui ? ui.Input : undefined;
+    // A table handed out is completed with every element, one a surface lacks
+    // drawing nothing, so the phone's Input is there but draws no field.
+    const Input =
+      e.surface !== "mobile" && "Input" in ui ? ui.Input : undefined;
+    // The phone has no keyboard, so the key hints would only mislead there.
+    const showHint = !compact && e.surface !== "mobile";
+    const saved = spareRows(compact, Input !== undefined, showHint);
     const cwd = await $.session.cwd();
     const confirm = await readState($, "confirm");
     const relative = (path: string) => {
@@ -1485,7 +1492,7 @@ export const register: Register = (on) => {
       const facts = {
         claude: engine.version,
         surface: e.surface,
-        pane: `${e.props.bodyColumns}x${e.props.scroll.bodyRows}`,
+        pane: `${bodyColumns}x${bodyRows}`,
         view: feedbackFrom,
         message: lastMessage,
       };
@@ -1590,14 +1597,11 @@ export const register: Register = (on) => {
               ? [`i: insert ${footer.kept + (footer.anchored ? 1 : 0)} ranges`]
               : []),
           ],
-          e.props.bodyColumns,
+          bodyColumns,
         );
         return Math.max(
           1,
-          e.props.scroll.bodyRows -
-            LINES_CHROME_ROWS -
-            (footerRows - 1) +
-            saved,
+          bodyRows - LINES_CHROME_ROWS - (footerRows - 1) + saved,
         );
       };
       lineRowsAfter = rowsWith;
@@ -1612,7 +1616,7 @@ export const register: Register = (on) => {
           ...(kept.length > 0 ? [`i: ${insertLabel}`] : []),
         ],
         FEEDBACK_LABEL,
-        e.props.bodyColumns,
+        bodyColumns,
       );
       const lines = previewLines.lines;
       const status =
@@ -1628,7 +1632,7 @@ export const register: Register = (on) => {
         Math.max(0, lines.length - lineRows),
       );
       const gutter = String(lines.length).length;
-      const width = Math.max(10, e.props.bodyColumns - gutter - 3);
+      const width = Math.max(10, bodyColumns - gutter - 3);
       const shown = lines.slice(offset, offset + lineRows);
       const below = lines.length - offset - shown.length;
       const page = (by: number) =>
@@ -1782,7 +1786,7 @@ export const register: Register = (on) => {
             )}
             {feedbackFits && feedbackButton("lines")}
           </Box>
-          {!compact && (
+          {showHint && (
             <Text dimColor wrap="truncate-end">
               ↑↓ move · Enter start/end of range · k keep it, pick another · Esc
               close
@@ -1793,7 +1797,8 @@ export const register: Register = (on) => {
     }
 
     const showHidden = await readState($, "showHidden");
-    const query = await readState($, "query");
+    // A filter typed on another surface can't be cleared where there is no box.
+    const query = Input ? await readState($, "query") : "";
     const marked = await readState($, "marked");
     const markedSet = new Set(marked);
     const hiddenLabelOf = (shown: boolean) =>
@@ -1840,21 +1845,16 @@ export const register: Register = (on) => {
     const listRoom = (labelsFor: (footer: Footer) => string[]) => {
       const now = { peek: peeking, hidden: showHidden, marks: marked.length };
       const rowsWith = (footer: Footer) => {
-        const footerRows = wrappedRows(labelsFor(footer), e.props.bodyColumns);
-        const room =
-          e.props.scroll.bodyRows - LIST_CHROME_ROWS - (footerRows - 1) + saved;
-        const fits = peekLines(room, e.props.bodyColumns, compact);
+        const footerRows = wrappedRows(labelsFor(footer), bodyColumns);
+        const room = bodyRows - LIST_CHROME_ROWS - (footerRows - 1) + saved;
+        const fits = peekLines(room, bodyColumns, compact);
         const peekRows = footer.peek && fits > 0 ? fits + PEEK_CHROME_ROWS : 0;
         return { fits, rows: Math.max(1, room - peekRows) };
       };
       listRowsAfter = (change) => rowsWith({ ...now, ...change }).rows;
       const drawn = rowsWith(now);
       peekFits = drawn.fits;
-      listFeedbackFits = fitsAfter(
-        labelsFor(now),
-        FEEDBACK_LABEL,
-        e.props.bodyColumns,
-      );
+      listFeedbackFits = fitsAfter(labelsFor(now), FEEDBACK_LABEL, bodyColumns);
       return drawn.rows;
     };
     // The last file stays up while the read for the next row waits, so the
@@ -1878,7 +1878,7 @@ export const register: Register = (on) => {
           ) : (
             shown.lines.slice(0, peekFits).map((line, i) => (
               <Text key={`peek:${i}`} wrap="truncate-end">
-                {previewLine(line, e.props.bodyColumns - 2) || " "}
+                {previewLine(line, bodyColumns - 2) || " "}
               </Text>
             ))
           )}
@@ -2040,7 +2040,7 @@ export const register: Register = (on) => {
               >
                 {fitCellsStart(
                   `${markedSet.has(hit.path) ? "✓ " : ""}${displayName(hit.rel)}${hit.isLink ? " →" : ""}`,
-                  Math.max(10, e.props.bodyColumns - 8),
+                  Math.max(10, bodyColumns - 8),
                 )}
               </Button>
               {hit.status ? (
@@ -2109,7 +2109,7 @@ export const register: Register = (on) => {
             )}
             {listFeedbackFits && feedbackButton(listView)}
           </Box>
-          {!compact && (
+          {showHint && (
             <Text dimColor wrap="truncate-end">
               ↑↓ move · Enter add file · l lines · m mark · f folders · Esc
               close
@@ -2278,7 +2278,7 @@ export const register: Register = (on) => {
               >
                 {fitCells(
                   `${markedSet.has(joinPath(dir, entry.name)) ? "✓ " : ""}${displayName(entry.name)}${isDir ? "/" : ""}${entry.isLink ? " →" : ""}`,
-                  Math.max(10, e.props.bodyColumns - 8),
+                  Math.max(10, bodyColumns - 8),
                 )}
               </Button>
               {entry.kind === "file" && (
@@ -2389,7 +2389,7 @@ export const register: Register = (on) => {
           )}
           {listFeedbackFits && feedbackButton("folder")}
         </Box>
-        {!compact && (
+        {showHint && (
           <Text dimColor wrap="truncate-end">
             ↑↓ move · Enter add/open · l lines · m mark · s search · r recent ·
             Esc close

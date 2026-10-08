@@ -367,6 +367,31 @@ export const fitsAfter = (
   width: number,
 ) => wrappedRows([...labels, label], width) === wrappedRows(labels, width);
 
+// The pane's rows and columns as its props report them. A surface that
+// hasn't measured yet may leave them out; the pane then draws at a usual
+// terminal size instead of failing to draw.
+export const DEFAULT_BODY_ROWS = 24;
+export const DEFAULT_BODY_COLUMNS = 80;
+const sizeOr = (n: unknown, fallback: number) =>
+  typeof n === "number" && Number.isFinite(n) ? n : fallback;
+export const paneSize = (props: {
+  bodyColumns?: number;
+  scroll?: { bodyRows?: number };
+}) => ({
+  rows: sizeOr(props.scroll?.bodyRows, DEFAULT_BODY_ROWS),
+  columns: sizeOr(props.bodyColumns, DEFAULT_BODY_COLUMNS),
+});
+
+// Rows the pane's chrome leaves to the list or the file, against the count
+// that assumes a bordered three-row text box, a footer margin and a hint
+// line. A compact pane drops the border and the margin; a surface with no
+// text box (mobile) draws none, and one with no keyboard no hint.
+export const spareRows = (
+  compact: boolean,
+  hasInput: boolean,
+  hasHint: boolean,
+) => (compact ? 1 : 0) + (hasInput ? (compact ? 2 : 0) : 3) + (hasHint ? 0 : 1);
+
 // One preview row: tabs as two spaces, unsafe characters as �, cut to width.
 export const previewLine = (text: string, width: number) =>
   fitCells(displayName(text.replace(/\t/g, "  ").replace(/\r$/, "")), width);
