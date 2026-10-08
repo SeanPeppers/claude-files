@@ -324,13 +324,15 @@ for (const surface of ["terminal", "desktop"] as const) {
     await ui.unmount();
   });
 
-  test(`l with nothing focused in recent asks to arrow first; f clears the view [${surface}]`, async ($, on) => {
+  test(`l with nothing focused in recent asks to arrow first (a click arms it); f clears the view [${surface}]`, async ($, on) => {
     memStore(on, { recent: { [ROOT]: ["/p/a.ts"] } });
     const log = wire(on, { files: { "a.ts": 1 } });
     const ui = await mount($, surface);
     await ui.press({ key: "recent" });
     await ui.press({ key: "lines" });
-    expect(log.toasts.at(-1)).toMatch(/Arrow onto a file first/);
+    if (surface === "terminal")
+      expect(log.toasts.at(-1)).toMatch(/Arrow onto a file first/);
+    else expect(await ui.find({ text: "lines: pick a file" })).toBeDefined();
     await ui.press({ key: "folders" });
     expect(await ui.find({ key: "row:a.ts" })).toBeDefined();
     expect(await ui.find({ text: /recent in/ })).toBeUndefined();

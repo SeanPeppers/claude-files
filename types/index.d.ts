@@ -22,6 +22,7 @@ declare module "claude-code" {
       peeked: number;
       changes: boolean;
       feedback: string;
+      armed: string;
     };
   }
 }

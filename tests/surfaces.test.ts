@@ -4,6 +4,7 @@ import {
   DEFAULT_BODY_COLUMNS,
   DEFAULT_BODY_ROWS,
   paneSize,
+  pickWords,
   spareRows,
 } from "../hooks/rank";
 import { posix } from "./posix";
@@ -42,6 +43,13 @@ test("spareRows: the terminal keeps its counts, a box-less surface gains", async
   expect(spareRows(false, false, false)).toBe(4);
   // Compact mobile: margin, box and hint.
   expect(spareRows(true, false, false)).toBe(5);
+});
+
+test("pickWords names each surface's way of pressing", async () => {
+  expect(pickWords("terminal")).toBe("Enter on");
+  expect(pickWords("desktop")).toBe("Enter or click on");
+  expect(pickWords("vscode")).toBe("Enter or click on");
+  expect(pickWords("mobile")).toBe("Tap");
 });
 
 const entry = (name: string, kind: "file" | "dir" = "file") => ({
@@ -107,6 +115,16 @@ const mount = ($: any, surface: Surface, bodyRows = 40, columns = 80) =>
     },
   });
 
+// A click or a tap on a footer button moves the focus onto it first.
+const focusOn = ($: any, element: string) =>
+  $.ui.focus({
+    component: "Pane",
+    requestId: "file-picker",
+    plugin: "file-picker",
+    element,
+    origin: { kind: "person" },
+  });
+
 for (const surface of SURFACES) {
   test(`the pane draws when the surface leaves its size out [${surface}]`, async ($, on) => {
     wire(on);
@@ -146,6 +164,112 @@ for (const surface of SURFACES) {
     );
     await ui.unmount();
   });
+
+  test(`lines with no file highlighted [${surface}]`, async ($, on) => {
+    const log = wire(on);
+    const ui = await mount($, surface);
+    await focusOn($, "lines");
+    await ui.press({ key: "lines" });
+    if (surface === "terminal") {
+      // The terminal is unchanged: it asks for a highlighted file.
+      expect(log.toasts).toEqual(["Arrow onto a file first, then press l"]);
+      expect(await ui.find({ text: "lines: pick a file" })).toBeUndefined();
+      await ui.unmount();
+      return;
+    }
+    expect(log.toasts).toEqual([]);
+    expect(await ui.find({ text: "lines: pick a file" })).toBeDefined();
+    // Pressing it again disarms, and a press then adds as usual.
+    await ui.press({ key: "lines" });
+    expect(await ui.find({ text: "lines: pick a file" })).toBeUndefined();
+    await ui.press({ key: "lines" });
+    // Folders still open while armed, so the file can be reached.
+    await ui.press({ key: "row:src" });
+    expect(await ui.find({ text: "lines: pick a file" })).toBeDefined();
+    await ui.press({ key: "row:rank.ts" });
+    expect(log.filled).toEqual([]);
+    expect(await ui.find({ key: "line:1" })).toBeDefined();
+    const how = pickWords(surface);
+    expect(
+      await ui.find({ text: `${how} the first line of the range` }),
+    ).toBeDefined();
+    await ui.press({ key: "line:3" });
+    expect(log.toasts.at(-1)).toBe(
+      `Range starts at line 3: ${how} the last line`,
+    );
+    expect(
+      await ui.find({ text: `From line 3: ${how} the last line of the range` }),
+    ).toBeDefined();
+    await ui.press({ key: "line:5" });
+    expect(log.filled).toEqual(["@src/rank.ts#L3-5 "]);
+    // Lines disarm once used: back in the folder a press adds again.
+    await ui.press({ key: "files" });
+    await ui.press({ key: "row:rank.ts" });
+    expect(log.filled.at(-1)).toBe("@src/rank.ts ");
+    await ui.unmount();
+  });
+
+  test(`marking by press, then insert [${surface}]`, async ($, on) => {
+    const log = wire(on);
+    const ui = await mount($, surface);
+    await focusOn($, "mark");
+    await ui.press({ key: "mark" });
+    if (surface === "terminal") {
+      expect(log.toasts).toEqual(["Arrow onto a file first, then press m"]);
+      await ui.unmount();
+      return;
+    }
+    expect(await ui.find({ text: "done marking" })).toBeDefined();
+    await ui.press({ key: "row:a.ts" });
+    await ui.press({ key: "row:b.ts" });
+    await ui.press({ key: "row:b.ts" });
+    await ui.press({ key: "row:src" });
+    await ui.press({ key: "row:rank.ts" });
+    expect(log.filled).toEqual([]);
+    expect(await ui.find({ text: /✓ rank\.ts/ })).toBeDefined();
+    await ui.press({ key: "insert" });
+    expect(log.filled).toEqual(["@a.ts @src/rank.ts "]);
+    // Inserting ends marking.
+    expect(await ui.find({ text: "done marking" })).toBeUndefined();
+    await ui.press({ key: "row:rank.ts" });
+    expect(log.filled.at(-1)).toBe("@src/rank.ts ");
+    await ui.unmount();
+  });
+
+  test(`a project search result opens its lines by press [${surface}]`, async ($, on) => {
+    const log = wire(on);
+    const ui = await mount($, surface);
+    await ui.press({ key: "search" });
+    let landed = false;
+    for (let i = 0; i < 200 && !landed; i++)
+      landed = (await ui.find({ key: "hit:/p/src/rank.ts" })) !== undefined;
+    expect(landed).toBe(true);
+    if (surface !== "terminal") {
+      await focusOn($, "lines");
+      await ui.press({ key: "lines" });
+      await ui.press({ key: "hit:/p/src/rank.ts" });
+      expect(await ui.find({ key: "line:1" })).toBeDefined();
+      await ui.press({ key: "files" });
+    }
+    await ui.press({ key: "hit:/p/a.ts" });
+    expect(log.filled).toEqual(["@a.ts "]);
+    await ui.unmount();
+  });
+
+  test(`reopening /files disarms [${surface}]`, async ($, on) => {
+    wire(on);
+    on("ui.open", () => ({ value: { isPlaced: true } }));
+    const ui = await mount($, surface);
+    await focusOn($, "lines");
+    await ui.press({ key: "lines" });
+    expect((await ui.find({ text: "lines: pick a file" })) !== undefined).toBe(
+      surface !== "terminal",
+    );
+    const reopen: any = { command: "files", args: "" };
+    await $.command.run(reopen);
+    expect(await ui.find({ text: "lines: pick a file" })).toBeUndefined();
+    await ui.unmount();
+  });
 }
 
 test("a phone gets the rows the missing box and hints would take", async ($, on) => {
@@ -161,4 +285,37 @@ test("a phone gets the rows the missing box and hints would take", async ($, on)
   expect((await rowsOn("mobile", 30)) - (await rowsOn("terminal", 30))).toBe(4);
   expect((await rowsOn("mobile", 12)) - (await rowsOn("terminal", 12))).toBe(1);
   expect(await rowsOn("desktop", 30)).toBe(await rowsOn("terminal", 30));
+});
+
+test("Windows working directory: marking by press mentions relative paths", async ($, on) => {
+  const filled: string[] = [];
+  on("session.cwd", () => ({ value: "C:\\proj" }));
+  on("fs.list", (_: any, e: any) => ({
+    value: /src$/.test(e.path)
+      ? [entry("x.ts")]
+      : [entry("src", "dir"), entry("a.ts")],
+  }));
+  on("fs.stat", (_: any, e: any) => ({
+    value: {
+      kind: /(src|proj)$/.test(e.path) ? "dir" : "file",
+      size: 1,
+      mtimeMs: 0,
+      isLink: false,
+    },
+  }));
+  on("ui.focus", () => ({}));
+  on("ui.toast", () => ({ value: undefined }));
+  on("prompt.fill", (_: any, e: any) => {
+    filled.push(e.text);
+    return { isFilled: true };
+  });
+  const ui = await mount($, "vscode");
+  await focusOn($, "mark");
+  await ui.press({ key: "mark" });
+  await ui.press({ key: "row:a.ts" });
+  await ui.press({ key: "row:src" });
+  await ui.press({ key: "row:x.ts" });
+  await ui.press({ key: "insert" });
+  expect(filled).toEqual(["@a.ts @src/x.ts "]);
+  await ui.unmount();
 });

@@ -392,6 +392,16 @@ export const spareRows = (
   hasHint: boolean,
 ) => (compact ? 1 : 0) + (hasInput ? (compact ? 2 : 0) : 3) + (hasHint ? 0 : 1);
 
+// How the person picks a row on a surface, for the words that tell them:
+// the terminal's keys, the editor and desktop app's keys or pointer, the
+// phone's touch.
+export const pickWords = (surface: string) =>
+  surface === "terminal"
+    ? "Enter on"
+    : surface === "mobile"
+      ? "Tap"
+      : "Enter or click on";
+
 // One preview row: tabs as two spaces, unsafe characters as �, cut to width.
 export const previewLine = (text: string, width: number) =>
   fitCells(displayName(text.replace(/\t/g, "  ").replace(/\r$/, "")), width);

@@ -144,12 +144,15 @@ for (const surface of SURFACES) {
     const log = wire(on);
     const ui = await mount($, surface);
     await ui.press({ key: "lines" });
+    // Off the terminal, l with nothing highlighted waits for a file instead.
+    if (surface === "terminal")
+      expect(log.toasts.shift()).toMatch(/Arrow onto a file/);
+    else expect(await ui.find({ text: "lines: pick a file" })).toBeDefined();
     await openLinesOf($, ui, "blob.bin");
     await openLinesOf($, ui, "huge.log");
-    expect(log.toasts).toHaveLength(3);
-    expect(log.toasts[0]).toMatch(/Arrow onto a file/);
-    expect(log.toasts[1]).toMatch(/binary/);
-    expect(log.toasts[2]).toMatch(/over 4 MiB/);
+    expect(log.toasts).toHaveLength(2);
+    expect(log.toasts[0]).toMatch(/binary/);
+    expect(log.toasts[1]).toMatch(/over 4 MiB/);
     expect(await ui.find({ key: "row:app.ts" })).toBeDefined();
     await ui.unmount();
   });

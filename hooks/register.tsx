@@ -35,6 +35,7 @@ import {
   parentOf,
   parseGitStatus,
   peekLines,
+  pickWords,
   previewLine,
   rangeLabel,
   rangeOf,
@@ -123,6 +124,9 @@ const CHANGES_STATE = { plugin: "file-picker", key: "changes" } as const;
 // The view the Feedback screen was opened from (`none` for `/files bug`), or
 // '' when it isn't shown.
 const FEEDBACK_STATE = { plugin: "file-picker", key: "feedback" } as const;
+// Where a row can't be focused without pressing it (a click, a tap), `l` and
+// `m` arm instead: "lines" or "mark" acts on the next file pressed, or ''.
+const ARMED_STATE = { plugin: "file-picker", key: "armed" } as const;
 
 // Rows of the list or of the file that fit in the pane, as last drawn. Both
 // are drawn a window at a time: a pane taller than its tree takes the arrows
@@ -194,6 +198,7 @@ const INITIAL: State = {
   peeked: 0,
   changes: false,
   feedback: "",
+  armed: "",
 };
 
 // The plugin directory lets `$` go only to functions declared in this file,
@@ -351,6 +356,13 @@ async function heldState<K extends keyof State>(
         version: held.version,
       };
     }
+    case "armed": {
+      const held = await $.state.get(ARMED_STATE);
+      return {
+        value: (held.value ?? INITIAL.armed) as State[K],
+        version: held.version,
+      };
+    }
   }
   throw new Error(`unknown state ${key}`);
 }
@@ -505,6 +517,13 @@ async function writeState<K extends keyof State>(
     case "feedback": {
       const next = value as State["feedback"];
       const done = await $.state.set(FEEDBACK_STATE, next, {
+        ifVersion: version,
+      });
+      return done.isSet;
+    }
+    case "armed": {
+      const next = value as State["armed"];
+      const done = await $.state.set(ARMED_STATE, next, {
         ifVersion: version,
       });
       return done.isSet;
@@ -1047,6 +1066,9 @@ async function openLines($: EngineInterface, path: string) {
       displayName(path),
     ]);
   if (await confirmFirst($, path, file, "lines")) return;
+  // An armed `lines` is spent on the file it opened, however it was picked.
+  if ((await readState($, "armed")) === "lines")
+    await updateState($, "armed", () => "");
   await clearConfirm($);
   const target = file.mentionPath;
   const name = displayName(baseName(target));
@@ -1090,7 +1112,7 @@ async function closeLines($: EngineInterface) {
 
 // Enter on a line: the first one starts a range, the second ends it and
 // puts `@file#Lstart-end` in the prompt, with any ranges kept before it.
-async function pressLine($: EngineInterface, n: number) {
+async function pressLine($: EngineInterface, n: number, surface: string) {
   const anchor = await readState($, "anchor");
   if (!anchor) {
     // A click presses a line without moving the ring onto it, so the range
@@ -1098,7 +1120,8 @@ async function pressLine($: EngineInterface, n: number) {
     await updateState($, "focusLine", () => n);
     const kept = await readState($, "kept");
     await setRanges($, n, kept, n);
-    return showToast($, `Range starts at line ${n}: Enter on the last line`);
+    const how = pickWords(surface);
+    return showToast($, `Range starts at line ${n}: ${how} the last line`);
   }
   return insertRanges($, rangeOf(anchor, n), n);
 }
@@ -1184,24 +1207,35 @@ async function findInLines($: EngineInterface, query: string) {
   await ringToLine($, index + 1);
 }
 
-async function linesOfFocused($: EngineInterface) {
+// Off the terminal a click or a tap on `lines` or `mark` moves the focus onto
+// that button, so no file is highlighted: the press arms the action for the
+// next file pressed instead, and a second press disarms it.
+async function arm($: EngineInterface, action: "lines" | "mark") {
+  await updateState($, "armed", (armed) => (armed === action ? "" : action));
+}
+
+async function linesOfFocused($: EngineInterface, surface: string) {
   if (focusedKey.startsWith("hit:")) return openLines($, focusedKey.slice(4));
   if (!focusedKey.startsWith("row:") || focusedKey === PARENT_KEY)
-    return showToast($, "Arrow onto a file first, then press l");
+    return surface === "terminal"
+      ? showToast($, "Arrow onto a file first, then press l")
+      : arm($, "lines");
   const dir = await currentDir($);
   return openLines($, joinPath(dir, focusedKey.slice(4)));
 }
 
 // `m`: marks the highlighted file, or unmarks it. Folders aren't marked; `a`
 // adds the folder you're in.
-async function markFocused($: EngineInterface) {
+async function markFocused($: EngineInterface, surface: string) {
   // A search result is always a file, named by its full path.
   if (focusedKey.startsWith("hit:")) {
     const path = focusedKey.slice(4);
     return setMarks($, toggleMark(await readState($, "marked"), path));
   }
   if (!focusedKey.startsWith("row:") || focusedKey === PARENT_KEY)
-    return showToast($, "Arrow onto a file first, then press m");
+    return surface === "terminal"
+      ? showToast($, "Arrow onto a file first, then press m")
+      : arm($, "mark");
   const dir = await currentDir($);
   const name = focusedKey.slice(4);
   const entry = (await listDir($, dir).catch((): Entry[] => [])).find(
@@ -1281,6 +1315,7 @@ async function insertMarked($: EngineInterface) {
   const names = marks.map((path) => displayName(baseName(path)));
   if (mentions.size === 0) {
     await setMarks($, []);
+    await updateState($, "armed", () => "");
     return showToast($, `Nothing added. ${skips}`, names);
   }
   const text = [...mentions].join("");
@@ -1292,6 +1327,7 @@ async function insertMarked($: EngineInterface) {
     return showToast($, "Could not add the marked files to the prompt");
   await setMarks($, []);
   await rememberRecent($, added);
+  await updateState($, "armed", () => "");
   void showToast(
     $,
     `Added ${mentions.size} ${mentions.size === 1 ? "file" : "files"}${skips ? `. ${skips}` : ""}`,
@@ -1382,6 +1418,20 @@ async function closeFeedback($: EngineInterface) {
   await focusFirst($, [feedbackRing, from === "lines" ? "find" : "filter"]);
 }
 
+// A press on a folder or search row. While `lines` or `mark` is armed a file
+// gets that action instead of going into the prompt; folders still open, so
+// the person can walk to the file. Lines disarm once a file opens, marking
+// stays on until pressed again or the marks go in.
+async function pressRow($: EngineInterface, path: string) {
+  const armed = await readState($, "armed");
+  if (!armed) return openPath($, path);
+  const file = await resolveFile($, path);
+  if (file?.stat.kind !== "file") return openPath($, path);
+  if (armed === "mark")
+    return updateState($, "marked", (marks) => toggleMark(marks, path));
+  return openLines($, path);
+}
+
 export const register: Register = (on) => {
   on("session.start", async ($, e, next) => {
     await $.command.register({
@@ -1413,6 +1463,7 @@ export const register: Register = (on) => {
     await updateState($, "preview", () => "");
     await updateState($, "anchor", () => 0);
     await updateState($, "kept", () => []);
+    await updateState($, "armed", () => "");
     await $.ui.open({
       id: PANE,
       title: "Files",
@@ -1455,6 +1506,8 @@ export const register: Register = (on) => {
     // The phone has no keyboard, so the key hints would only mislead there.
     const showHint = !compact && e.surface !== "mobile";
     const saved = spareRows(compact, Input !== undefined, showHint);
+    const how = pickWords(e.surface);
+    const armed = await readState($, "armed");
     const cwd = await $.session.cwd();
     const confirm = await readState($, "confirm");
     const relative = (path: string) => {
@@ -1623,10 +1676,10 @@ export const register: Register = (on) => {
         range && range.start !== range.end
           ? `${rangeLabel(range)}: Enter to add${kept.length > 0 ? " all" : ""}, k to keep, x to clear`
           : anchor
-            ? `From line ${anchor}: Enter on the last line of the range`
+            ? `From line ${anchor}: ${how} the last line of the range`
             : kept.length > 0
-              ? "Enter on the first line of another range, or i to insert"
-              : "Enter on the first line of the range";
+              ? `${how} the first line of another range, or i to insert`
+              : `${how} the first line of the range`;
       const offset = Math.min(
         await readState($, "lineOffset"),
         Math.max(0, lines.length - lineRows),
@@ -1712,7 +1765,7 @@ export const register: Register = (on) => {
                 plain
                 variant={isAnchor ? "primary" : undefined}
                 dimColor={!isAnchor && !inRange && !isKept}
-                onPress={() => pressLine($, n)}
+                onPress={() => pressLine($, n, e.surface)}
               >
                 {`${String(n).padStart(gutter)} ${mark} ${previewLine(text, width)}`}
               </Button>
@@ -1803,8 +1856,10 @@ export const register: Register = (on) => {
     const markedSet = new Set(marked);
     const hiddenLabelOf = (shown: boolean) =>
       shown ? "hide hidden" : "hidden";
+    const linesLabel = armed === "lines" ? "lines: pick a file" : "lines";
+    const markLabel = armed === "mark" ? "done marking" : "mark";
     const markLabelsOf = (marks: number) => [
-      "m: mark",
+      `m: ${markLabel}`,
       ...(marks > 0 ? [`i: insert ${marks} marked`] : []),
     ];
     const walking = (await readState($, "search")) && !project?.walk;
@@ -1896,7 +1951,7 @@ export const register: Register = (on) => {
       const listView = recentView ? "recent" : changes ? "changes" : "search";
       const recent = recentView ? await readState($, "recent") : [];
       listRows = listRoom((footer) => [
-        "l: lines",
+        `l: ${linesLabel}`,
         "f: folders",
         ...(recentView || changes
           ? []
@@ -2036,7 +2091,7 @@ export const register: Register = (on) => {
                 plain
                 variant={offset + i === 0 && query ? "primary" : undefined}
                 dimColor
-                onPress={() => openPath($, hit.path)}
+                onPress={() => pressRow($, hit.path)}
               >
                 {fitCellsStart(
                   `${markedSet.has(hit.path) ? "✓ " : ""}${displayName(hit.rel)}${hit.isLink ? " →" : ""}`,
@@ -2071,10 +2126,10 @@ export const register: Register = (on) => {
               key="lines"
               plain
               hotkey="l"
-              dimColor
-              onPress={() => linesOfFocused($)}
+              dimColor={armed !== "lines"}
+              onPress={() => linesOfFocused($, e.surface)}
             >
-              lines
+              {linesLabel}
             </Button>
             <Button
               key="folders"
@@ -2091,10 +2146,10 @@ export const register: Register = (on) => {
               key={markAgain ? MARK_AGAIN : "mark"}
               plain
               hotkey="m"
-              dimColor
-              onPress={() => markFocused($)}
+              dimColor={armed !== "mark"}
+              onPress={() => markFocused($, e.surface)}
             >
-              mark
+              {markLabel}
             </Button>
             {marked.length > 0 && (
               <Button
@@ -2147,7 +2202,7 @@ export const register: Register = (on) => {
 
     // Listed in the order the buttons draw, since the order decides the wraps.
     listRows = listRoom((footer) => [
-      "l: lines",
+      `l: ${linesLabel}`,
       "s: search",
       "r: recent",
       "g: git",
@@ -2274,7 +2329,7 @@ export const register: Register = (on) => {
                 plain
                 variant={offset + i === 0 && query ? "primary" : undefined}
                 dimColor={!isDir}
-                onPress={() => openPath($, joinPath(dir, entry.name))}
+                onPress={() => pressRow($, joinPath(dir, entry.name))}
               >
                 {fitCells(
                   `${markedSet.has(joinPath(dir, entry.name)) ? "✓ " : ""}${displayName(entry.name)}${isDir ? "/" : ""}${entry.isLink ? " →" : ""}`,
@@ -2308,10 +2363,10 @@ export const register: Register = (on) => {
             key="lines"
             plain
             hotkey="l"
-            dimColor
-            onPress={() => linesOfFocused($)}
+            dimColor={armed !== "lines"}
+            onPress={() => linesOfFocused($, e.surface)}
           >
-            lines
+            {linesLabel}
           </Button>
           <Button
             key="search"
@@ -2371,10 +2426,10 @@ export const register: Register = (on) => {
             key={markAgain ? MARK_AGAIN : "mark"}
             plain
             hotkey="m"
-            dimColor
-            onPress={() => markFocused($)}
+            dimColor={armed !== "mark"}
+            onPress={() => markFocused($, e.surface)}
           >
-            mark
+            {markLabel}
           </Button>
           {marked.length > 0 && (
             <Button
