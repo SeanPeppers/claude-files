@@ -595,7 +595,13 @@ async function focusFirst(
     const result = await $.ui
       .focus({ requestId: PANE, key })
       .catch(() => ({ deny: "threw" }));
-    if (!("deny" in result)) return;
+    if (!("deny" in result)) {
+      // Recorded here, not left to the focus hook: in the terminal a ring
+      // this plugin moves (back from the line view, say) doesn't reach it,
+      // and l, m and the preview stayed on the row left behind.
+      focusedKey = key;
+      return schedulePeek($);
+    }
   }
 }
 
