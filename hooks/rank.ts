@@ -381,6 +381,8 @@ export type Hit = {
   name: string;
   size: number;
   isLink?: boolean;
+  // Git's status letters (`M`, `??`, `R`) for a changed file.
+  status?: string;
 };
 
 // Folders a project search never walks into: version control, dependencies,
@@ -546,4 +548,53 @@ export const headLines = (text: string, count: number) => {
     from = end + 1;
   }
   return lines;
+};
+
+// `path` and every folder above it, nearest first, ending at its root.
+export const ancestorsOf = (path: string) => {
+  const out = [path];
+  for (let dir = path; !isRoot(dir) && parentOf(dir) !== dir; ) {
+    dir = parentOf(dir);
+    if (!dir) break;
+    out.push(dir);
+  }
+  return out;
+};
+
+// The files `git status --porcelain=v1 -z` names, as hits under the
+// repository `root`. Each record is `XY path`, NUL-ended, and a rename or copy
+// is followed by a record holding the path it came from. Paths are relative
+// to the repository root with `/` separators and never quoted, so spaces and
+// newlines arrive as they are. Files gone from the working tree are left out:
+// there's nothing left to mention. Output cut at the engine's limit ends
+// mid-record, so its last piece is dropped and the result is capped.
+export const parseGitStatus = (
+  root: string,
+  out: string,
+  truncated: boolean,
+  max = WALK_MAX_FILES,
+): Walk => {
+  const records = out.split("\0");
+  // The empty piece after the final NUL, or the record the cut left partial.
+  records.pop();
+  const hits: Hit[] = [];
+  const windows = isWindowsPath(root);
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i] ?? "";
+    const code = record.slice(0, 2);
+    if (/[RC]/.test(code)) i++;
+    const rel = record.slice(3);
+    if (record[2] !== " " || !rel || rel.endsWith("/")) continue;
+    if ((code[1] === "D" && code[0] !== "U") || code === "D ") continue;
+    if (hits.length >= max)
+      return { hits, capped: true, deep: false, foldersCapped: false };
+    hits.push({
+      path: joinPath(root, windows ? rel.replace(/\//g, "\\") : rel),
+      rel,
+      name: rel.slice(rel.lastIndexOf("/") + 1),
+      size: 0,
+      status: code.trim(),
+    });
+  }
+  return { hits, capped: truncated, deep: false, foldersCapped: false };
 };
