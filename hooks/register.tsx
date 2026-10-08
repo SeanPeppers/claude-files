@@ -7,6 +7,7 @@ import {
   findLine,
   fitCells,
   fitCellsStart,
+  gitStatusCall,
   headLines,
   humanSize,
   isBinaryText,
@@ -470,25 +471,9 @@ async function walkCwd($: EngineInterface) {
   await updateState($, "walked", (n) => n + 1);
 }
 
-// The one command the plugin runs. Read-only: optional locks off, so status
-// doesn't refresh the index; fsmonitor off, since a repository's own config
-// could name a program for it; submodules ignored, so git starts no other
-// git. The engine turns repository hooks off for every git it runs.
-const GIT_STATUS_ARGV = [
-  "git",
-  "--no-optional-locks",
-  "-c",
-  "core.fsmonitor=false",
-  "status",
-  "--porcelain=v1",
-  "-z",
-  "--untracked-files=all",
-  "--ignore-submodules=all",
-] as const;
-
 // Lists git's changed and untracked files in place of a project walk. The
 // repository root is found by looking for `.git` above the working directory,
-// since porcelain paths are relative to it and no second git command is run.
+// and git is pinned to it (see gitStatusCall), so no second git command runs.
 async function gitCwd($: EngineInterface) {
   const cwd = await $.session.cwd();
   const current: Project = {};
@@ -505,9 +490,9 @@ async function gitCwd($: EngineInterface) {
   const root = current.root;
   if (!root) current.note = "Not inside a git repository";
   else {
-    const init = { cwd: root };
+    const { argv, init } = gitStatusCall(root);
     try {
-      const ran = await $.process.run(GIT_STATUS_ARGV, init);
+      const ran = await $.process.run(argv, init);
       if (ran.exitCode === 0)
         current.walk = parseGitStatus(root, ran.stdout, ran.isStdoutTruncated);
       else

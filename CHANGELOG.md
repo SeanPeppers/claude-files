@@ -18,7 +18,8 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`M`, `A`, `R`, `??`, `UU`), filtered and picked like project search
   results: Enter, `l` and `m` work on them. It runs one read-only command,
   `git status --porcelain=v1 -z` (with optional locks, fsmonitor and
-  submodules off), from the repository root, and no other; the README's
+  submodules off), pinned to the repository root with `--work-tree` and
+  `GIT_CEILING_DIRECTORIES`, and no other; the README's
   Safety section names it in full. Outside a repository, or when git is
   missing or fails, the pane says why.
 

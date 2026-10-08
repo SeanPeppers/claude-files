@@ -1,6 +1,6 @@
 import { expect, test } from "claude-code/testing";
 
-import { ancestorsOf, parseGitStatus } from "../hooks/rank";
+import { ancestorsOf, gitStatusCall, parseGitStatus } from "../hooks/rank";
 import { posix } from "./posix";
 
 const rels = (out: string, truncated = false, max?: number) =>
@@ -78,6 +78,23 @@ test("git status: a cut or overlong output is capped", async () => {
   expect(parseGitStatus("/r", many, false, 30).capped).toBe(false);
 });
 
+test("git status runs pinned to the root found, never climbing past it", async () => {
+  const { argv, init } = gitStatusCall("/a/b");
+  expect(argv).toContain("--work-tree=/a/b");
+  expect(argv.indexOf("--work-tree=/a/b")).toBeLessThan(argv.indexOf("status"));
+  expect(init).toEqual({
+    cwd: "/a/b",
+    env: { GIT_CEILING_DIRECTORIES: "/a" },
+  });
+  expect(gitStatusCall("C:\\x\\y").init.env).toEqual({
+    GIT_CEILING_DIRECTORIES: "C:\\x",
+  });
+  // A filesystem root has nothing above it to fence off.
+  expect(gitStatusCall("/").init).toEqual({ cwd: "/" });
+  // A parent holding the list separator would be split into wrong ceilings.
+  expect(gitStatusCall("/a:b/c").init).toEqual({ cwd: "/a:b/c" });
+});
+
 test("ancestors run from the path up to its root", async () => {
   expect(ancestorsOf("/a/b/c")).toEqual(["/a/b/c", "/a/b", "/a", "/"]);
   expect(ancestorsOf("/")).toEqual(["/"]);
@@ -109,7 +126,7 @@ function wire(
 ) {
   const log = {
     filled: [] as string[],
-    runs: [] as { argv: string[]; cwd?: string }[],
+    runs: [] as { argv: string[]; cwd?: string; ceiling?: string }[],
     toasts: [] as string[],
   };
   on("session.cwd", () => ({ value: cwd }));
@@ -133,7 +150,16 @@ function wire(
     throw new Error("ENOENT");
   });
   on("process.run", (_: any, e: any) => {
-    log.runs.push({ argv: [...e.argv], cwd: posix(e.init?.cwd) });
+    log.runs.push({
+      // A Windows host spells the work tree natively, as it does every path.
+      argv: e.argv.map((arg: string) =>
+        arg.startsWith("--work-tree=")
+          ? `--work-tree=${posix(arg.slice(12))}`
+          : arg,
+      ),
+      cwd: posix(e.init?.cwd),
+      ceiling: posix(e.init?.env?.GIT_CEILING_DIRECTORIES),
+    });
     if (run.reject) return { deny: run.reject };
     return {
       value: {
@@ -186,6 +212,7 @@ const EXPECTED_ARGV = [
   "--no-optional-locks",
   "-c",
   "core.fsmonitor=false",
+  "--work-tree=/p",
   "status",
   "--porcelain=v1",
   "-z",
@@ -199,7 +226,7 @@ test("g lists git's changed files; Enter, l, m and f work on them", async ($, on
   await ui.press({ key: "changes" });
   const a = { key: "hit:/p/src/a.ts" };
   expect(await until(ui, a)).toBe(true);
-  expect(log.runs).toEqual([{ argv: EXPECTED_ARGV, cwd: "/p" }]);
+  expect(log.runs).toEqual([{ argv: EXPECTED_ARGV, cwd: "/p", ceiling: "/" }]);
   // Hidden names show, deleted files don't, and each row has its status.
   expect(await ui.find({ key: "hit:/p/.github/ci.yml" })).toBeDefined();
   expect(await ui.find({ key: "hit:/p/b c.md" })).toBeDefined();
@@ -256,6 +283,7 @@ test("from a subfolder, git runs at the repository root and paths join to it", a
   await ui.press({ key: "changes" });
   expect(await until(ui, { key: "hit:/p/src/a.ts" })).toBe(true);
   expect(log.runs[0]?.cwd).toBe("/p");
+  expect(log.runs[0]?.argv).toContain("--work-tree=/p");
   await ui.press({ key: "hit:/p/src/a.ts" });
   expect(log.filled).toEqual(["@a.ts "]);
   // Outside the working directory: an absolute mention.

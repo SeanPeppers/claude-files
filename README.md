@@ -200,8 +200,13 @@ stays on your screen: nothing it reads goes into the prompt. When you press `g`
 it runs one command, in the repository root, with no shell:
 
 ```
-git --no-optional-locks -c core.fsmonitor=false status --porcelain=v1 -z --untracked-files=all --ignore-submodules=all
+git --no-optional-locks -c core.fsmonitor=false --work-tree=<repository root> status --porcelain=v1 -z --untracked-files=all --ignore-submodules=all
 ```
+
+with `GIT_CEILING_DIRECTORIES` set to the folder above the repository root, so
+the paths git prints always belong to the root the plugin found: a broken
+`.git` there makes git fail (and the pane say so) instead of reporting an
+outer repository's paths. That variable is only set for git, never read.
 
 It only reads: optional locks are off so git doesn't refresh its index file,
 `core.fsmonitor` is off so a repository's own config can't make git start

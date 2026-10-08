@@ -561,6 +561,37 @@ export const ancestorsOf = (path: string) => {
   return out;
 };
 
+// The one command the plugin runs, from the repository `root` found by its
+// `.git`. Read-only: optional locks off, so status doesn't refresh the index;
+// fsmonitor off, since a repository's own config could name a program for it;
+// submodules ignored, so git starts no other git. The engine turns repository
+// hooks off for every git it runs. Porcelain paths are relative to git's work
+// tree, so `--work-tree` pins it to `root` whatever GIT_DIR, GIT_WORK_TREE or
+// core.worktree say, and the ceiling stops git from climbing past a `.git` it
+// finds invalid into an outer repository: it fails instead. `--git-dir` isn't
+// used since an explicit git dir skips git's safe.directory ownership check.
+// ponytail: a parent holding the path-list separator can't be a ceiling, so
+// it's left off there; `--work-tree` still keeps every row under `root`.
+export const gitStatusCall = (root: string) => {
+  const argv = [
+    "git",
+    "--no-optional-locks",
+    "-c",
+    "core.fsmonitor=false",
+    `--work-tree=${root}`,
+    "status",
+    "--porcelain=v1",
+    "-z",
+    "--untracked-files=all",
+    "--ignore-submodules=all",
+  ];
+  const ceiling = isRoot(root) ? "" : parentOf(root);
+  const listSep = isWindowsPath(root) ? ";" : ":";
+  return ceiling && !ceiling.includes(listSep)
+    ? { argv, init: { cwd: root, env: { GIT_CEILING_DIRECTORIES: ceiling } } }
+    : { argv, init: { cwd: root } };
+};
+
 // The files `git status --porcelain=v1 -z` names, as hits under the
 // repository `root`. Each record is `XY path`, NUL-ended, and a rename or copy
 // is followed by a record holding the path it came from. Paths are relative
