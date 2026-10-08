@@ -110,6 +110,37 @@ export const mentionFor = (path: string, cwd: string, range?: LineRange) => {
     : `@${slashed}${fragment} `;
 };
 
+// One mention per range, in the order given, or undefined when the path can't
+// be mentioned safely; no ranges is the whole file.
+export const mentionsFor = (
+  path: string,
+  cwd: string,
+  ranges: readonly LineRange[] = [],
+) => {
+  if (ranges.length === 0) return mentionFor(path, cwd);
+  const mentions = ranges.map((range) => mentionFor(path, cwd, range));
+  return mentions.every(Boolean) ? mentions.join("") : undefined;
+};
+
+// Sorted by start, with overlapping or touching ranges joined: 3–5 and 6–9
+// are one range, 3–9, so no line is mentioned twice.
+export const mergeRanges = (ranges: readonly LineRange[]) => {
+  const merged: LineRange[] = [];
+  for (const range of [...ranges].sort((a, b) => a.start - b.start)) {
+    const last = merged.at(-1);
+    if (last && range.start <= last.end + 1)
+      last.end = Math.max(last.end, range.end);
+    else merged.push({ start: range.start, end: range.end });
+  }
+  return merged;
+};
+
+// Ranges as the status line lists them: `L3–9, L12`.
+export const rangesLabel = (ranges: readonly LineRange[]) =>
+  ranges
+    .map(({ start, end }) => (start === end ? `L${start}` : `L${start}–${end}`))
+    .join(", ");
+
 // Lower is better; undefined means no match. Prefix beats substring beats
 // subsequence. NFC on both sides: macOS often stores names decomposed.
 export const fuzzyScore = (name: string, query: string): number | undefined => {
