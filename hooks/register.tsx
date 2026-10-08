@@ -1423,6 +1423,7 @@ export const register: Register = (on) => {
     }
 
     // The chrome counts one row for each footer; a narrow pane wraps them.
+    // Listed in the order the buttons draw, since the order decides the wraps.
     const footerRows = wrappedRows(
       [
         "l: lines",
@@ -1431,8 +1432,8 @@ export const register: Register = (on) => {
         ...(prevDir && prevDir !== dir ? ["b: back"] : []),
         "c: cwd",
         `h: ${hiddenLabel}`,
-        "a: @ folder",
         `p: ${peekLabel}`,
+        "a: @ folder",
         ...markLabels,
       ],
       e.props.bodyColumns,

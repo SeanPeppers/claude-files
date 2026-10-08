@@ -56,6 +56,7 @@ const NAMES = Array.from(
 // about 9 rows at 40 columns even one list row can't fit.
 for (const [COLUMNS, BODY_ROWS] of [
   [40, 20],
+  [39, 20],
   [40, 11],
   [40, 9],
   [90, 11],
