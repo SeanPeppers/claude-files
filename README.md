@@ -208,11 +208,18 @@ the paths git prints always belong to the root the plugin found: a broken
 `.git` there makes git fail (and the pane say so) instead of reporting an
 outer repository's paths. That variable is only set for git, never read.
 
-It only reads: optional locks are off so git doesn't refresh its index file,
-`core.fsmonitor` is off so a repository's own config can't make git start
-another program, submodules are ignored so git doesn't run itself inside
-them, and Claude Code turns repository hooks off for every git it runs. It
-runs no other command. It never writes files or touches the network, never reads your
+Git is kept to reading as far as its flags allow: optional locks are off
+so git doesn't refresh its index file, `core.fsmonitor` is off so git starts
+no file-system monitor, submodules are ignored so git doesn't run itself inside
+them, and Claude Code turns repository hooks off for every git it runs. The
+plugin runs no other command, but git itself may: to compare a changed file
+with the index, `git status` runs any clean or process filter the repository's
+`.gitattributes` and git config set up for it, such as Git LFS
+(`filter.lfs.process`), and git has no flag that turns those off. Such a
+filter is a program the repository (or your own git config) names, and it can
+do whatever that program does. Press `g` only in repositories whose config you
+trust as much as running `git status` there yourself. Apart from that, the
+plugin never writes files or touches the network, never reads your
 Claude Code settings, and nothing is sent until you press Enter on the prompt
 yourself.
 
@@ -266,7 +273,7 @@ changes what Claude or its tools do; they only add the pane.
 
 Engine calls it makes: `$.command.register` (the `/files` command),
 `$.fs.list` and `$.fs.stat` (folder listings and file types; project search is `$.fs.list` alone, one folder per call; `g` also stats `.git` in the working directory and each folder above it to find the repository root),
-`$.process.run` (only the one `git status` command above, only when you press `g`),
+`$.process.run` (only the one `git status` command above, only when you press `g`; git may in turn run the repository's clean or process filters, see Safety),
 `$.fs.read` (the file you press `l` on, up to 4 MiB, and with the preview on,
 the highlighted file, up to 64 KiB), `$.clock.after` (waits 120 ms for the
 arrows to rest before the preview reads),

@@ -37,6 +37,12 @@ jobs:
           persist-credentials: false
       - name: Biome (lint + format)
         run: npx --yes @biomejs/biome@2.5.15 ci .
+      - name: README Safety keeps the git filter caveat
+        # `claude plugin test` can't read README.md, and git status really
+        # does run a repository's clean filters, so Safety must keep saying so.
+        run: |
+          ! grep -q "can't make git start" README.md
+          grep -q "clean or process filter" README.md
 
   typecheck:
     runs-on: ubuntu-latest
