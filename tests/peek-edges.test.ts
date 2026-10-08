@@ -10,7 +10,11 @@ const ROOT = "/p";
 type Tree = Record<string, Record<string, string | null>>;
 
 function wire(on: any, tree: Tree, links: Record<string, string> = {}) {
-  const log = { reads: [] as string[], filled: [] as string[] };
+  const log = {
+    reads: [] as string[],
+    filled: [] as string[],
+    toasts: [] as string[],
+  };
   const contentOf = (path: string) => {
     const at = path.lastIndexOf("/");
     return tree[path.slice(0, at) || "/"]?.[path.slice(at + 1)];
@@ -51,7 +55,10 @@ function wire(on: any, tree: Tree, links: Record<string, string> = {}) {
     return { value: contentOf(path) ?? "" };
   });
   on("ui.focus", () => ({ value: {} }));
-  on("ui.toast", () => ({ value: undefined }));
+  on("ui.toast", (_: any, e: any) => {
+    log.toasts.push(String(e.text));
+    return { value: undefined };
+  });
   on("prompt.fill", (_: any, e: any) => {
     log.filled.push(e.text);
     return { isFilled: true };
@@ -318,5 +325,67 @@ test("a pane that grows shows more of the previewed file without reading again",
   });
   expect(await ui.find({ text: /^row 10$/ })).toBeDefined();
   expect(log.reads).toEqual(["/p/a.ts"]);
+  await ui.unmount();
+});
+
+const drawnRows = async (ui: any) =>
+  (await ui.findAll({ type: "Button" }))
+    .map((b: any) => b.key)
+    .filter((k: string) => k?.startsWith("row:") && k !== "row:..");
+
+test("p that pushes the highlighted row out of view puts the ring on the filter", async ($, on) => {
+  const clock = mock.clock(on);
+  const files: Record<string, string> = {};
+  for (let i = 0; i < 40; i++)
+    files[`f${String(i).padStart(2, "0")}.txt`] = `body ${i}\n`;
+  const log = wire(on, { [ROOT]: files });
+  const ui = await mount($);
+  const last = (await drawnRows(ui)).at(-1);
+  await arrowOnto($, last);
+  await ui.press({ key: "peek" });
+  expect(await drawnRows(ui)).not.toContain(last);
+  expect(await rest(clock, ui, /arrow onto a file/)).toBeDefined();
+  await ui.press({ key: "mark" });
+  expect(log.toasts.at(-1)).toMatch(/Arrow onto a file first/);
+  expect(log.reads).toEqual([]);
+  await ui.unmount();
+});
+
+test("p leaves the ring on a row that stays where it was", async ($, on) => {
+  const clock = mock.clock(on);
+  const files: Record<string, string> = {};
+  for (let i = 0; i < 40; i++)
+    files[`f${String(i).padStart(2, "0")}.txt`] = `body ${i}\n`;
+  wire(on, { [ROOT]: files });
+  const ui = await mount($);
+  await arrowOnto($, "row:f01.txt");
+  await ui.press({ key: "peek" });
+  expect(await rest(clock, ui, /^body 1$/)).toBeDefined();
+  await ui.press({ key: "peek" });
+  await ui.press({ key: "mark" });
+  expect(await ui.find({ text: "✓ f01.txt" })).toBeDefined();
+  await ui.unmount();
+});
+
+test("h that moves the highlighted row puts the ring on the filter", async ($, on) => {
+  mock.clock(on);
+  const log = wire(on, { [ROOT]: { ".a": "x\n", "c.ts": "c\n" } });
+  const ui = await mount($);
+  await arrowOnto($, "row:c.ts");
+  await ui.press({ key: "hidden" });
+  await ui.press({ key: "mark" });
+  expect(log.toasts.at(-1)).toMatch(/Arrow onto a file first/);
+  expect(await ui.find({ text: "✓ c.ts" })).toBeUndefined();
+  await ui.unmount();
+});
+
+test("h that leaves the highlighted row in place keeps the ring on it", async ($, on) => {
+  mock.clock(on);
+  wire(on, { [ROOT]: { "b.ts": "b\n", "c.ts": "c\n" } });
+  const ui = await mount($);
+  await arrowOnto($, "row:c.ts");
+  await ui.press({ key: "hidden" });
+  await ui.press({ key: "mark" });
+  expect(await ui.find({ text: "✓ c.ts" })).toBeDefined();
   await ui.unmount();
 });

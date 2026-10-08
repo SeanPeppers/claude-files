@@ -13,13 +13,20 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   you press `p` and stays on for the session. Secrets files are never
   previewed (even after a yes), nor binary files, links that lead out of the
   project or files over 64 KiB; each gets a one-line notice instead. The
-  preview shows only in a pane of at least 20 rows and 40 columns.
+  preview shows only in a pane of at least 20 rows and 40 columns. When
+  turning it on or off moves the highlighted row, the highlight goes to the
+  filter box.
 
 ### Fixed
 
 - In a pane under 39 columns the line view's footer (`files`, `whole file`,
   `clear start`) wraps, and the rows it took were not counted, so the lines
   ran past the pane and the arrows scrolled it instead of moving.
+- After `h` the highlight stayed at the same place on the screen while the
+  rows moved under it, so it sat on another row while `l` and `m` answered
+  "Arrow onto a file first". When `h` moves the highlighted row, the
+  highlight now goes to the filter box; when the row stays put, it stays on
+  it and `l` and `m` act on it.
 
 ## [0.4.3] - 2026-10-07
 
