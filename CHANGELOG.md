@@ -63,7 +63,8 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Clicks and taps in the desktop app, VS Code and the mobile app: pressing
   `lines` or `mark` with no file highlighted arms it (`lines: pick a file`,
   `done marking`), so the next file pressed opens line by line or is marked.
-  Folders still open while armed. The terminal is unchanged.
+  Folders still open while armed. The terminal is unchanged, and ignores an
+  action armed on another surface.
 - Tests that draw and use the pane on all four surfaces (terminal, desktop,
   VS Code, mobile), including short and narrow panes and a Windows working
   directory.

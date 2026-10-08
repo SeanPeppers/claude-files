@@ -1450,9 +1450,10 @@ async function closeFeedback($: EngineInterface) {
 // A press on a folder or search row. While `lines` or `mark` is armed a file
 // gets that action instead of going into the prompt; folders still open, so
 // the person can walk to the file. Lines disarm once a file opens, marking
-// stays on until pressed again or the marks go in.
-async function pressRow($: EngineInterface, path: string) {
-  const armed = await readState($, "armed");
+// stays on until pressed again or the marks go in. The terminal never arms, so
+// it ignores an action left armed by another surface sharing the session.
+async function pressRow($: EngineInterface, path: string, surface: string) {
+  const armed = surface === "terminal" ? "" : await readState($, "armed");
   if (!armed) return openPath($, path);
   const file = await resolveFile($, path);
   if (file?.stat.kind !== "file") return openPath($, path);
@@ -1541,7 +1542,8 @@ export const register: Register = (on) => {
     const showHint = !compact && e.surface !== "mobile";
     const saved = spareRows(compact, Input !== undefined, showHint);
     const how = pickWords(e.surface);
-    const armed = await readState($, "armed");
+    // Mirrors pressRow: an action armed on another surface is not shown here.
+    const armed = e.surface === "terminal" ? "" : await readState($, "armed");
     const cwd = await $.session.cwd();
     const confirm = await readState($, "confirm");
     const relative = (path: string) => {
@@ -2115,7 +2117,7 @@ export const register: Register = (on) => {
                 plain
                 variant={offset + i === 0 && query ? "primary" : undefined}
                 dimColor
-                onPress={() => pressRow($, hit.path)}
+                onPress={() => pressRow($, hit.path, e.surface)}
               >
                 {fitCellsStart(
                   `${markedSet.has(hit.path) ? "✓ " : ""}${displayName(hit.rel)}${hit.isLink ? " →" : ""}`,
@@ -2348,7 +2350,9 @@ export const register: Register = (on) => {
                 plain
                 variant={offset + i === 0 && query ? "primary" : undefined}
                 dimColor={!isDir}
-                onPress={() => pressRow($, joinPath(dir, entry.name))}
+                onPress={() =>
+                  pressRow($, joinPath(dir, entry.name), e.surface)
+                }
               >
                 {fitCells(
                   `${markedSet.has(joinPath(dir, entry.name)) ? "✓ " : ""}${displayName(entry.name)}${isDir ? "/" : ""}${entry.isLink ? " →" : ""}`,

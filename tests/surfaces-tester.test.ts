@@ -180,3 +180,27 @@ for (const surface of OFF_TERMINAL) {
     await ui.unmount();
   });
 }
+
+for (const action of ["mark", "lines"] as const) {
+  test(`${action} armed on the desktop is ignored on the terminal`, async ($, on) => {
+    const log = wire(on, { "/p": [file("a.ts")] });
+    const desk = await mount($, "desktop");
+    await focusOn($, action);
+    await desk.press({ key: action });
+    const label = action === "mark" ? "done marking" : "lines: pick a file";
+    expect(await desk.find({ text: label })).toBeDefined();
+    await desk.unmount();
+    const term = await mount($, "terminal");
+    expect(await term.find({ text: label })).toBeUndefined();
+    await focusOn($, action);
+    await term.press({ key: action });
+    expect(log.toasts.at(-1)).toBe(
+      `Arrow onto a file first, then press ${action === "mark" ? "m" : "l"}`,
+    );
+    await focusOn($, "row:a.ts");
+    await term.press({ key: "row:a.ts" });
+    expect(log.filled).toEqual(["@a.ts "]);
+    expect(await term.find({ text: "✓ a.ts" })).toBeUndefined();
+    await term.unmount();
+  });
+}
