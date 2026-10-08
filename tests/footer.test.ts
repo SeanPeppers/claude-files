@@ -54,10 +54,13 @@ const NAMES = Array.from(
 
 // Wide and narrow docks, and the short inline band (compact layout); below
 // about 9 rows at 40 columns even one list row can't fit.
+// At 39 columns a mark wraps the folder footer to a fourth row, which only
+// the labels counted in the order the buttons draw foresee.
 for (const [COLUMNS, BODY_ROWS] of [
   [40, 20],
   [40, 11],
   [40, 9],
+  [39, 11],
   [90, 11],
 ] as const)
   test(`list, search, recent and lines stay within ${BODY_ROWS} rows at ${COLUMNS} columns`, async ($, on) => {
