@@ -998,12 +998,21 @@ export const register: Register = (on) => {
 
     const preview = await readState($, "preview");
     if (preview && previewLines?.path === preview) {
+      const anchor = await readState($, "anchor");
+      // The chrome counts one footer row; a narrow pane wraps the buttons.
+      const footerRows = wrappedRows(
+        [
+          "f: files",
+          "w: whole file",
+          ...(anchor > 0 ? ["x: clear start"] : []),
+        ],
+        e.props.bodyColumns,
+      );
       lineRows = Math.max(
         1,
-        e.props.scroll.bodyRows - LINES_CHROME_ROWS + saved,
+        e.props.scroll.bodyRows - LINES_CHROME_ROWS - (footerRows - 1) + saved,
       );
       const lines = previewLines.lines;
-      const anchor = await readState($, "anchor");
       const ringLine = await readState($, "focusLine");
       const range = anchor && ringLine ? rangeOf(anchor, ringLine) : undefined;
       const offset = Math.min(

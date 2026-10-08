@@ -15,6 +15,12 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   project or files over 64 KiB; each gets a one-line notice instead. The
   preview shows only in a pane of at least 20 rows and 40 columns.
 
+### Fixed
+
+- In a pane under 39 columns the line view's footer (`files`, `whole file`,
+  `clear start`) wraps, and the rows it took were not counted, so the lines
+  ran past the pane and the arrows scrolled it instead of moving.
+
 ## [0.4.3] - 2026-10-07
 
 ### Changed

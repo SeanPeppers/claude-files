@@ -57,6 +57,7 @@ const NAMES = Array.from(
 for (const [COLUMNS, BODY_ROWS] of [
   [40, 20],
   [39, 20],
+  [30, 20],
   [40, 11],
   [40, 9],
   [90, 11],
