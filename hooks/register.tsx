@@ -946,14 +946,17 @@ export const register: Register = (on) => {
       const toInsert = mergeRanges(current ? kept.concat(current) : kept);
       const insertLabel = `insert ${toInsert.length} ${toInsert.length === 1 ? "range" : "ranges"}`;
       const clearLabel = kept.length > 0 ? "clear all" : "clear start";
-      // The chrome counts one footer row; a narrow pane wraps it.
+      // The chrome counts one footer row; a narrow pane wraps it. Rows are
+      // reserved for the footer at its widest (every button, the longest
+      // labels), so k, x and i appearing never shrink the window under the
+      // ring and push the line being picked out of view.
       const footerRows = wrappedRows(
         [
           "f: files",
           "w: whole file",
-          ...(anchor > 0 ? ["k: keep range"] : []),
-          ...(anchor > 0 || kept.length > 0 ? [`x: ${clearLabel}`] : []),
-          ...(kept.length > 0 ? [`i: ${insertLabel}`] : []),
+          "k: keep range",
+          "x: clear start",
+          `i: insert ${lines.length} ranges`,
         ],
         e.props.bodyColumns,
       );

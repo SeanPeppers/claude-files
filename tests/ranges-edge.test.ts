@@ -249,3 +249,23 @@ for (const [rows, columns] of [
     expect(log.filled).toEqual(["@app.ts#L1 "]);
     await ui.unmount();
   });
+
+// The footer grows (k, x, i) as ranges are kept; if it wrapped onto a new row
+// the line window shrank under the ring and the start line slid out of view.
+test("the line window keeps its size as the footer grows in a narrow pane", async ($, on) => {
+  wire(on);
+  const ui = await mount($, 30, 64);
+  await openLinesOf($, ui, "big.ts");
+  const lastDrawn = async () => {
+    let n = 0;
+    while (await ui.find({ key: `line:${n + 1}` })) n++;
+    return n;
+  };
+  const rows = await lastDrawn();
+  await keep($, ui, 1, 1);
+  expect(await lastDrawn()).toBe(rows);
+  await ui.press({ key: `line:${rows}` });
+  expect(await ui.find({ key: `line:${rows}` })).toBeDefined();
+  expect(await lastDrawn()).toBe(rows);
+  await ui.unmount();
+});
