@@ -512,3 +512,38 @@ export const rankHits = (
         NAME_ORDER.compare(a.hit.rel, b.hit.rel),
     )
     .map((row) => row.hit);
+
+// Browsing preview: files over PEEK_MAX_BYTES aren't read at all, since
+// `$.fs.read` has no limit short of the whole file.
+export const PEEK_MAX_BYTES = 64 * 1024;
+const PEEK_MAX_LINES = 10;
+const PEEK_MIN_LINES = 3;
+// The preview's file name line and the blank row above it.
+export const PEEK_CHROME_ROWS = 2;
+// Below this a preview line shows too little to be worth the list rows.
+const PEEK_MIN_COLUMNS = 40;
+
+// Lines the preview under a list gets out of the `room` the list would have
+// had alone, or 0 when it doesn't fit: never in the compact layout or a narrow
+// pane, and never more than the list keeps for itself.
+export const peekLines = (room: number, columns: number, compact: boolean) => {
+  if (compact || columns < PEEK_MIN_COLUMNS) return 0;
+  const lines = Math.min(
+    PEEK_MAX_LINES,
+    Math.floor((room - PEEK_CHROME_ROWS) / 2),
+  );
+  return lines >= PEEK_MIN_LINES ? lines : 0;
+};
+
+// The first `count` lines of `text`, without splitting the rest of it.
+export const headLines = (text: string, count: number) => {
+  const lines: string[] = [];
+  let from = 0;
+  while (lines.length < count && from < text.length) {
+    const end = text.indexOf("\n", from);
+    lines.push(text.slice(from, end < 0 ? text.length : end));
+    if (end < 0) break;
+    from = end + 1;
+  }
+  return lines;
+};
