@@ -212,6 +212,18 @@ The line view does the same for the line you start, end, keep, insert or
 clear a range from when `keep range`, `clear` or `insert` rewraps its
 footer.
 
+**Clicks and taps.** In the desktop app, VS Code and the Claude mobile app you
+can click or tap instead of using keys. Pressing a row adds the file or opens
+the folder, as Enter does. Clicking `lines` moves the focus onto that button,
+so no file is highlighted. Instead of asking you to arrow onto one, the button
+switches to `lines: pick a file`: the next file you press opens line by line,
+and folders still open so you can get to it. `mark` switches to `done marking`
+in the same way: each file you press is marked or unmarked until you press it
+again or insert the marks. Line ranges work by pressing the first line and then
+the last. The mobile app has no text fields yet, so there is no filter or find
+box and no key hints. Lists still page with the `↑ N more` / `↓ N more` rows.
+The terminal works as before.
+
 The folder is listed when you open it; reopen `/files` to see files added since.
 
 **Pane size.** A pane under 20 rows (such as the band under the transcript in a
@@ -219,7 +231,8 @@ terminal under ~110 columns) uses a compact layout, and a narrow pane wraps the
 footer buttons. The preview (`p`) shows only in a pane of at least 20 rows
 and 40 columns, and takes at most half the list's rows. Below about 40 columns by 10 rows the arrow keys may scroll the
 pane instead of moving between rows: widen the terminal or drag the pane edge
-to give it room.
+to give it room. If an app hasn't reported the pane's size yet, the pane is
+laid out for 24 rows by 80 columns until it does.
 
 ## Feedback
 
@@ -322,7 +335,9 @@ the changes. Either way no filter runs.
 
 Apart from those two git commands, the plugin runs nothing, never writes your
 files or touches the network, never reads your Claude Code settings, and
-nothing is sent until you press Enter on the prompt yourself. The Feedback
+nothing is sent until you press Enter on the prompt yourself. Arming `lines`
+or `mark` with a click or tap only changes what pressing a file does. It adds
+nothing to the prompt and skips none of the checks below. The Feedback
 links (`t`) are addresses on github.com: the plugin opens no connection, and
 the links open in your browser only when you click them.
 
@@ -376,7 +391,7 @@ changes what Claude or its tools do; they only add the pane.
 |---|---|
 | `session.start` | registers the `/files` command |
 | `command.run` (`/files` only) | opens the Files pane with an empty filter, or on the Feedback screen for `/files bug` and `/files idea`. It is matched to the `/files` command, so it never sees or changes any other command |
-| `ui.render` (the Files pane) | draws the folder list, the project search, the recent files, the git changes list, the line view (with any kept ranges), the secrets confirmation or the Feedback screen (two links to GitHub issue forms) |
+| `ui.render` (the Files pane) | draws the folder list, the project search, the recent files, the git changes list, the line view (with any kept ranges), the secrets confirmation or the Feedback screen (two links to GitHub issue forms), with the elements the surface has (no text fields on mobile) |
 | `ui.focus` (the Files pane) | remembers the highlighted row for `l`, `m` and the preview, and when the arrows reach a `↑/↓ N more` row, slides the list one row. With the preview on, it starts a short timer whose end reads the highlighted file |
 
 Engine calls it makes: `$.command.register` (the `/files` command),
@@ -391,7 +406,8 @@ toasts), `$.store` (the recent files, kept between sessions: read when
 you press `r` or add a file, written when you add a file or one has gone) and `$.state` (the pane's own session state: folder, filter, scroll
 position, search, recent or changes mode, the open file, the range start,
 the kept line ranges, the marked files, the recent files as last checked,
-whether the preview is on and whether the Feedback screen is open). It
+whether the preview is on, whether a click or tap armed `lines` or `mark`
+and whether the Feedback screen is open). It
 reads no environment variables, tokens or Claude Code settings, and it makes
 no network requests (`git status` runs with lazy fetch off, so it reads only local files): `claude plugin validate` shows no `env reads:` line and no
 network calls. The list of secrets file names under [Safety](#safety) is used
@@ -404,6 +420,14 @@ only to ask before such a file goes into the prompt.
 | Linux | tested in CI and by hand in a real terminal |
 | macOS | tested in CI; decomposed (NFD) filenames match typed accents |
 | Windows | tested in CI; drive letters, `\` paths and `\\server\share` work. Files hidden by attribute (not a leading dot) still show |
+| Desktop app (Code tab) | unit-tested: the pane is drawn and used with the desktop's elements, by keys and by clicks (`lines` and `mark` arm for the next file pressed). Not yet tried in the real app |
+| VS Code | unit-tested the same way as the desktop app, including a Windows working directory. Not yet tried in the real extension |
+| Claude mobile app | unit-tested: no filter or find box (the app draws no text fields yet), no key hints, and the room they would take goes to the list; rows, `lines`, `mark` and line ranges work by tapping. Not yet tried in the real app |
+
+The unit tests run the plugin's hooks against each surface's element table
+with Claude Code's own test kit. They don't paint anything, so the pane's
+look, its scrolling and its focus handling in each app still need checking by
+hand.
 
 ## Develop
 
@@ -433,7 +457,7 @@ Dependabot keeps the pinned actions current.
 | `hooks/register.tsx` | `/files`, the pane, the line view, focus handling, picking |
 | `hooks/rank.ts` | pure helpers: ranking, the project walk, `git status` parsing, paths, mentions, secrets check, the list window, the recent list, the feedback links |
 | `types/index.d.ts` | the session state the pane keeps |
-| `tests/` | unit, hardening (hostile names, Windows paths), line view, project search, recent files, feedback and UI tests |
+| `tests/` | unit, hardening (hostile names, Windows paths), line view, project search, recent files, feedback, surface (desktop, VS Code, mobile) and UI tests |
 | `.github/ISSUE_TEMPLATE/` | the bug and feature forms the Feedback links open |
 | `CHANGELOG.md` | what changed in each version |
 

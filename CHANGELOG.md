@@ -60,6 +60,13 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   run.
   Outside a repository, or when git is missing, too old or fails, the pane
   says why.
+- Clicks and taps in the desktop app, VS Code and the mobile app: pressing
+  `lines` or `mark` with no file highlighted arms it (`lines: pick a file`,
+  `done marking`), so the next file pressed opens line by line or is marked.
+  Folders still open while armed. The terminal is unchanged.
+- Tests that draw and use the pane on all four surfaces (terminal, desktop,
+  VS Code, mobile), including short and narrow panes and a Windows working
+  directory.
 
 ### Fixed
 
@@ -87,6 +94,13 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   highlight landing on "more" while a second `m` unmarked the hidden row.
   The list now scrolls to keep the highlighted row in view after `m` or `i`,
   and the highlight stays on it.
+- The mobile app no longer draws an empty frame where the filter and find
+  boxes would be, or key hints it has no keys for; the list gets those rows.
+- A filter typed on another surface no longer hides files on mobile, where
+  there is no box to clear it.
+- The pane draws at 24 by 80 when a surface hasn't reported its size,
+  instead of failing to draw.
+- Line view status and toasts say "click" or "tap" off the terminal.
 
 ## [0.4.3] - 2026-10-07
 
