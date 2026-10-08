@@ -142,7 +142,7 @@ added since.
 | `↑` `↓` | move through the lines; long files slide as you go |
 | `Enter` on a line | first press marks the start, second the end: `@file#L12-30` goes in. Enter twice on one line gives `#L12` |
 | `↑` `↓` after a start | the lines from the start (`▸`) to the one you're on are highlighted (`┃`), and the status line reads `Lines 12–30 (19 lines): Enter to add, k to keep, x to clear` |
-| `k` after a start | keep that range and pick another of the same file: kept lines show `✓` and the status line lists them (`Kept L10–20, L80–95`). Overlapping or touching ranges merge into one |
+| `k` after a start | keep that range and pick another of the same file: kept lines show `✓` and the status line lists them (`Kept L10–20, L80–95`). Overlapping or touching ranges merge into one. The `keep range` and `insert` buttons, tabbed to or clicked, take the same range as the keys: it ends on the last line the ring was on |
 | `Enter` on the last line, or `i` | with ranges kept, put them all in at once, in line order, as separate mentions: `@src/a.ts#L10-20 @src/a.ts#L80-95`. `i` takes a range you're still picking along too |
 | find box | type text and press Enter to jump to the next line containing it |
 | `w` | put the whole file in instead |

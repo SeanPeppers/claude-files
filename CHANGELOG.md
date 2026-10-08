@@ -13,7 +13,9 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   final range, or `i`, puts them all in as separate mentions
   (`@src/a.ts#L10-20 @src/a.ts#L80-95`), in line order, with overlapping or
   touching ranges merged. Kept lines show `✓` in the gutter and are listed in
-  the status line; `x` clears them along with the start.
+  the status line; `x` clears them along with the start. The `keep range`
+  and `insert` buttons, reached with Tab, the arrows or a click, take the
+  range on screen just as the keys do.
 
 ## [0.4.3] - 2026-10-07
 

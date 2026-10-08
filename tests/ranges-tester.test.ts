@@ -245,3 +245,47 @@ test("i with a range half picked: a failed fill keeps it for the retry", async (
   ]);
   await ui.unmount();
 });
+
+// Tab, the arrows or a click put the ring on a footer button before it is
+// pressed; the range must still end on the last line the ring was on.
+test("the keep and insert buttons, reached by the ring, take the whole range", async ($, on) => {
+  const log = wire(on);
+  const ui = await mount($);
+  await openLinesOf($, ui, "app.ts");
+  await arrowOnto($, "line:3");
+  await ui.press({ key: "line:3" });
+  await arrowOnto($, "line:8");
+  await arrowOnto($, "keep");
+  expect(await ui.find({ text: /^Lines 3–8 / })).toBeDefined();
+  await ui.press({ key: "keep" });
+  expect(await ui.find({ text: /^Kept L3–8 · / })).toBeDefined();
+  await arrowOnto($, "line:10");
+  await ui.press({ key: "line:10" });
+  await arrowOnto($, "line:11");
+  await arrowOnto($, "insert");
+  expect(await ui.find({ text: /^11 ┃ / })).toBeDefined();
+  await ui.press({ key: "insert" });
+  expect(log.filled).toEqual(["@app.ts#L3-8 @app.ts#L10-11 "]);
+  await ui.unmount();
+});
+
+test("the insert button reached by the ring keeps every range when the fill fails", async ($, on) => {
+  const log = wire(on, [false, true]);
+  const ui = await mount($);
+  await openLinesOf($, ui, "app.ts");
+  await keep($, ui, 1, 2);
+  await arrowOnto($, "line:7");
+  await ui.press({ key: "line:7" });
+  await arrowOnto($, "line:9");
+  await arrowOnto($, "insert");
+  await ui.press({ key: "insert" });
+  expect(log.toasts.at(-1)).toMatch(/Could not add/);
+  expect(await ui.find({ text: /^Kept L1–2, L7–9 · / })).toBeDefined();
+  await ui.press({ key: "insert" });
+  expect(log.filled).toEqual([
+    "@app.ts#L1-2 @app.ts#L7-9 ",
+    "@app.ts#L1-2 @app.ts#L7-9 ",
+  ]);
+  expect(await ui.find({ text: /^Kept/ })).toBeUndefined();
+  await ui.unmount();
+});

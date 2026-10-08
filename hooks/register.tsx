@@ -64,7 +64,10 @@ const LINEOFFSET_STATE = { plugin: "file-picker", key: "lineOffset" } as const;
 const ANCHOR_STATE = { plugin: "file-picker", key: "anchor" } as const;
 // Ranges of the shown file kept for one insert, merged and in line order.
 const KEPT_STATE = { plugin: "file-picker", key: "kept" } as const;
-// The line the ring is on, or 0: state, so the range redraws as it moves.
+// The last line the ring was on in the shown file, or 0: state, so the range
+// redraws as it moves. It outlives the ring moving onto a footer button, so
+// tabbing to or clicking keep or insert takes the range on screen, not the
+// start alone.
 const FOCUSLINE_STATE = { plugin: "file-picker", key: "focusLine" } as const;
 // A secrets-looking file waiting for a second yes, and what to do with it.
 const CONFIRM_STATE = { plugin: "file-picker", key: "confirm" } as const;
@@ -686,6 +689,7 @@ async function openLines($: EngineInterface, path: string) {
   lastFind = -1;
   await updateState($, "anchor", () => 0);
   await updateState($, "kept", () => []);
+  await updateState($, "focusLine", () => 0);
   await updateState($, "lineOffset", () => 0);
   await updateState($, "preview", () => target);
   await focusFirst($, [lineKey(1), "find"]);
@@ -872,10 +876,10 @@ export const register: Register = (on) => {
     const result = await next(e);
     if (!("deny" in result)) {
       focusedKey = e.element ?? "";
-      const line = focusedKey.startsWith("line:")
-        ? Number(focusedKey.slice(5))
-        : 0;
-      await updateState($, "focusLine", () => line);
+      if (focusedKey.startsWith("line:")) {
+        const line = Number(focusedKey.slice(5));
+        await updateState($, "focusLine", () => line);
+      }
     }
     return result;
   }).catch((_$, e, next) => next(e));
@@ -943,7 +947,7 @@ export const register: Register = (on) => {
       const kept = await readState($, "kept");
       const range = anchor && ringLine ? rangeOf(anchor, ringLine) : undefined;
       // What k keeps and i adds: the range on screen, or the start alone when
-      // the ring is off the lines.
+      // the ring hasn't been on a line of this file.
       const current = anchor ? (range ?? rangeOf(anchor, anchor)) : undefined;
       const toInsert = mergeRanges(current ? kept.concat(current) : kept);
       const insertLabel = `insert ${toInsert.length} ${toInsert.length === 1 ? "range" : "ranges"}`;
