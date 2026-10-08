@@ -221,7 +221,8 @@ and folders still open so you can get to it. `mark` switches to `done marking`
 in the same way: each file you press is marked or unmarked until you press it
 again or insert the marks. Line ranges work by pressing the first line and then
 the last. The mobile app has no text fields yet, so there is no filter or find
-box and no key hints. Lists still page with the `↑ N more` / `↓ N more` rows.
+box and no key hints. Clicking or tapping a `↑ N more` / `↓ N more` row pages
+the list or file, as on the terminal.
 The terminal works as before.
 
 The folder is listed when you open it; reopen `/files` to see files added since.
@@ -392,7 +393,7 @@ changes what Claude or its tools do; they only add the pane.
 | `session.start` | registers the `/files` command |
 | `command.run` (`/files` only) | opens the Files pane with an empty filter, or on the Feedback screen for `/files bug` and `/files idea`. It is matched to the `/files` command, so it never sees or changes any other command |
 | `ui.render` (the Files pane) | draws the folder list, the project search, the recent files, the git changes list, the line view (with any kept ranges), the secrets confirmation or the Feedback screen (two links to GitHub issue forms), with the elements the surface has (no text fields on mobile) |
-| `ui.focus` (the Files pane) | remembers the highlighted row for `l`, `m` and the preview, and when the arrows reach a `↑/↓ N more` row, slides the list one row. With the preview on, it starts a short timer whose end reads the highlighted file |
+| `ui.focus` (the Files pane) | remembers the highlighted row for `l`, `m` and the preview, and when the arrows reach a `↑/↓ N more` row, slides the list one row (a click or tap that presses the row pages from where the list was before that slide). With the preview on, it starts a short timer whose end reads the highlighted file |
 
 Engine calls it makes: `$.command.register` (the `/files` command),
 `$.fs.list` and `$.fs.stat` (folder listings and file types; project search is `$.fs.list` alone, one folder per call; `r` checks each recent file still exists with `$.fs.stat`; `g` also stats `.git` in the working directory and each folder above it to find the repository root, then stats the git folder `git rev-parse` names), `$.fs.exists` (`g` checking that folder for `info/attributes`),
@@ -420,7 +421,7 @@ only to ask before such a file goes into the prompt.
 | Linux | tested in CI and by hand in a real terminal |
 | macOS | tested in CI; decomposed (NFD) filenames match typed accents |
 | Windows | tested in CI; drive letters, `\` paths and `\\server\share` work. Files hidden by attribute (not a leading dot) still show |
-| Desktop app (Code tab) | unit-tested: the pane is drawn and used with the desktop's elements, by keys and by clicks (`lines` and `mark` arm for the next file pressed). Not yet tried in the real app |
+| Desktop app (Code tab) | unit-tested: the pane is drawn and used with the desktop's elements, by keys and by clicks (`lines` and `mark` arm for the next file pressed, and clicking a `↑/↓ N more` row pages without skipping a row). Not yet tried in the real app |
 | VS Code | unit-tested the same way as the desktop app, including a Windows working directory. Not yet tried in the real extension |
 | Claude mobile app | unit-tested: no filter or find box (the app draws no text fields yet), no key hints, and the room they would take goes to the list; rows, `lines`, `mark` and line ranges work by tapping. Not yet tried in the real app |
 

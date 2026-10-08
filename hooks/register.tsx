@@ -908,13 +908,20 @@ async function toggleHidden($: EngineInterface) {
   const after = await placeOf($, key, listRowsAfter({ hidden: shown }));
   await ringToToggle($, ringAfterToggle(key, before, after, hiddenKey(shown)));
 }
+// The slide a "more" row's focus started, and the window it started from. A
+// click or tap raises that focus just before the press, so the press pages
+// from where the window was, not from the row the slide moved it on.
+let pendingSlide:
+  | { element: string; from: Promise<number | undefined> }
+  | undefined;
 
 // Arrowing onto a "more" row moves the window one row and puts the ring on
-// the row that came into view, so the arrows keep walking.
+// the row that came into view, so the arrows keep walking. Resolves to the
+// offset it slid from.
 async function slide($: EngineInterface, by: 1 | -1) {
   if (previewLines) {
     const total = previewLines.lines.length;
-    if (total === 0) return;
+    if (total === 0) return undefined;
     const offset = Math.min(
       await readState($, "lineOffset"),
       Math.max(0, total - lineRows),
@@ -926,7 +933,8 @@ async function slide($: EngineInterface, by: 1 | -1) {
     await updateState($, "lineOffset", () =>
       windowAround(index, offset, lineRows, total),
     );
-    return ringToLine($, index + 1);
+    await ringToLine($, index + 1);
+    return offset;
   }
   const keys = await listKeys($);
   const offset = Math.min(
@@ -938,7 +946,7 @@ async function slide($: EngineInterface, by: 1 | -1) {
     keys.length - 1,
   );
   const target = keys[index];
-  if (!target) return;
+  if (!target) return undefined;
   await updateState($, "offset", () =>
     windowAround(index, offset, listRows, keys.length),
   );
@@ -947,6 +955,27 @@ async function slide($: EngineInterface, by: 1 | -1) {
   focusedKey = target;
   void schedulePeek($).catch(() => undefined);
   await focusFirst($, [target]);
+  return offset;
+}
+
+// A press on a "more" row pages from the window as it is now, or as it was
+// before the slide that the same row's focus started.
+async function pageBy(
+  $: EngineInterface,
+  key: "offset" | "lineOffset",
+  by: number,
+  total: number,
+  rows: number,
+) {
+  const element = by > 0 ? MORE_BELOW : MORE_ABOVE;
+  const slid =
+    pendingSlide?.element === element ? pendingSlide.from : undefined;
+  pendingSlide = undefined;
+  const from = await slid;
+  const last = Math.max(0, total - rows);
+  await updateState($, key, (current) =>
+    Math.min(Math.max(0, Math.min(from ?? current, last) + by), last),
+  );
 }
 
 // Puts `path` in the prompt, once per range given or whole without one, and
@@ -1479,7 +1508,12 @@ export const register: Register = (on) => {
       (e.element === MORE_BELOW || e.element === MORE_ABOVE)
     ) {
       // Keep the ring where it is; slide() moves it once the new rows draw.
-      void slide($, e.element === MORE_BELOW ? 1 : -1).catch(() => undefined);
+      pendingSlide = {
+        element: e.element,
+        from: slide($, e.element === MORE_BELOW ? 1 : -1).catch(
+          () => undefined,
+        ),
+      };
       return {};
     }
     const result = await next(e);
@@ -1689,12 +1723,7 @@ export const register: Register = (on) => {
       const shown = lines.slice(offset, offset + lineRows);
       const below = lines.length - offset - shown.length;
       const page = (by: number) =>
-        updateState($, "lineOffset", () =>
-          Math.min(
-            Math.max(0, offset + by),
-            Math.max(0, lines.length - lineRows),
-          ),
-        );
+        pageBy($, "lineOffset", by, lines.length, lineRows);
       return (
         <Box flexDirection="column">
           <Box flexDirection="column-reverse">
@@ -1976,12 +2005,7 @@ export const register: Register = (on) => {
       const below = hits.length - offset - shown.length;
       const top = hits[0];
       const page = (by: number) =>
-        updateState($, "offset", () =>
-          Math.min(
-            Math.max(0, offset + by),
-            Math.max(0, hits.length - listRows),
-          ),
-        );
+        pageBy($, "offset", by, hits.length, listRows);
       const caps = [
         walk?.capped && `first ${WALK_MAX_FILES.toLocaleString("en-US")} files`,
         walk?.cut && "git output cut at 4 MiB",
@@ -2229,12 +2253,7 @@ export const register: Register = (on) => {
     const below = ranked.length - offset - shown.length;
     const top = ranked[0];
     const page = (by: number) =>
-      updateState($, "offset", () =>
-        Math.min(
-          Math.max(0, offset + by),
-          Math.max(0, ranked.length - listRows),
-        ),
-      );
+      pageBy($, "offset", by, ranked.length, listRows);
 
     // Enter in the filter: a typed path jumps, otherwise the best match opens.
     // The box clears itself on Enter, so the query clears with it.

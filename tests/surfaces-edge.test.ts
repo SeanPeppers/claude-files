@@ -241,6 +241,53 @@ for (const surface of SURFACES) {
     await ui.unmount();
   });
 
+  // A click or tap on a "more" row raises the focus (which slides one row)
+  // and then the press (which pages): together they must not skip a row,
+  // whether the press comes before or after the slide lands.
+  for (const view of ["folder", "search", "lines"] as const)
+    for (const settle of [false, true])
+      test(`clicking ↓ more then ↑ more skips no row in ${view}${settle ? ", slide landed" : ""} [${surface}]`, async ($, on) => {
+        const many = Array.from({ length: 70 }, (_, i) =>
+          file(`f${String(i).padStart(2, "0")}.ts`),
+        );
+        const text = Array.from({ length: 70 }, (_, i) => `l${i}`).join("\n");
+        wire(on, { "/p": many }, "/p", text);
+        const ui = await mount($, surface, 30, 80);
+        const prefix =
+          view === "lines" ? "line:" : view === "search" ? "hit:/p/f" : "row:f";
+        if (view === "search") {
+          await ui.press({ key: "search" });
+          let landed = false;
+          for (let i = 0; i < 200 && !landed; i++)
+            landed = (await ui.find({ key: "hit:/p/f00.ts" })) !== undefined;
+          expect(landed).toBe(true);
+        }
+        if (view === "lines") {
+          await focusOn($, "row:f00.ts");
+          await ui.press({ key: "lines" });
+        }
+        const shown = async () =>
+          (await ui.findAll({ type: "Button" }))
+            .map((b: any) => String(b.key ?? ""))
+            .filter((key: string) => key.startsWith(prefix))
+            .map((key: string) => Number(key.slice(prefix.length).slice(0, 2)));
+        const click = async (key: string) => {
+          const before = (await shown())[0];
+          await focusOn($, key);
+          for (let i = 0; settle && i < 200; i++)
+            if ((await shown())[0] !== before) break;
+          await ui.press({ key });
+        };
+        const first = await shown();
+        expect(first[0]).toBe(view === "lines" ? 1 : 0);
+        await click("more:below");
+        const second = await shown();
+        expect(second[0]).toBe((first.at(-1) ?? 0) + 1);
+        await click("more:above");
+        expect(await shown()).toEqual(first);
+        await ui.unmount();
+      });
+
   test(`line view gets the rows a missing find box and hint would take [${surface}]`, async ($, on) => {
     const text = Array.from({ length: 200 }, (_, i) => `l${i}`).join("\n");
     wire(on, { "/p": [file("a.ts")] }, "/p", text);
