@@ -389,3 +389,82 @@ test("h that leaves the highlighted row in place keeps the ring on it", async ($
   expect(await ui.find({ text: "✓ c.ts" })).toBeDefined();
   await ui.unmount();
 });
+
+const fortyFiles = () => {
+  const files: Record<string, string> = {};
+  for (let i = 0; i < 40; i++)
+    files[`f${String(i).padStart(2, "0")}.txt`] = `body ${i}\n`;
+  return files;
+};
+
+test("p in a pane too short for the preview leaves the ring on the last row", async ($, on) => {
+  mock.clock(on);
+  const log = wire(on, { [ROOT]: fortyFiles() });
+  const ui = await mount($, 15);
+  const last = (await drawnRows(ui)).at(-1);
+  await arrowOnto($, last);
+  await ui.press({ key: "peek" });
+  expect(await drawnRows(ui)).toContain(last);
+  await ui.press({ key: "mark" });
+  expect(await ui.find({ text: `✓ ${last.slice(4)}` })).toBeDefined();
+  expect(log.toasts).toEqual([]);
+  expect(log.reads).toEqual([]);
+  await ui.unmount();
+});
+
+test("p with a filter typed keeps the ring on a matching row that stays", async ($, on) => {
+  const clock = mock.clock(on);
+  wire(on, { [ROOT]: fortyFiles() });
+  const ui = await mount($);
+  await ui.input({ key: "filter", text: "f1", kind: "change" });
+  await arrowOnto($, "row:f12.txt");
+  await ui.press({ key: "peek" });
+  expect(await rest(clock, ui, /^body 12$/)).toBeDefined();
+  await ui.press({ key: "mark" });
+  expect(await ui.find({ text: "✓ f12.txt" })).toBeDefined();
+  await ui.unmount();
+});
+
+test("p and h with the ring on '..' or on nothing keep working", async ($, on) => {
+  const clock = mock.clock(on);
+  const log = wire(on, {
+    "/": { p: null },
+    [ROOT]: { ".a": "x\n", "c.ts": "c\n" },
+  });
+  const ui = await mount($);
+  await ui.press({ key: "peek" });
+  await ui.press({ key: "hidden" });
+  await arrowOnto($, "row:..");
+  await ui.press({ key: "hidden" });
+  await ui.press({ key: "peek" });
+  await ui.press({ key: "peek" });
+  await arrowOnto($, "row:c.ts");
+  expect(await rest(clock, ui, /^c$/)).toBeDefined();
+  await ui.press({ key: "mark" });
+  expect(await ui.find({ text: "✓ c.ts" })).toBeDefined();
+  expect(log.reads).toEqual(["/p/c.ts"]);
+  await ui.unmount();
+});
+
+test("h in search with the ring on a hit puts the ring on the filter", async ($, on) => {
+  mock.clock(on);
+  const log = wire(on, {
+    [ROOT]: { ".hid": null, "a.ts": "a\n" },
+    "/p/.hid": { "b.ts": "b\n" },
+  });
+  const ui = await mount($);
+  await ui.press({ key: "search" });
+  let walked = false;
+  for (let i = 0; i < 200 && !walked; i++)
+    walked = Boolean(await ui.find({ key: "hit:/p/a.ts" }));
+  expect(walked).toBe(true);
+  await arrowOnto($, "hit:/p/a.ts");
+  await ui.press({ key: "hidden" });
+  let shown = false;
+  for (let i = 0; i < 200 && !shown; i++)
+    shown = Boolean(await ui.find({ key: "hit:/p/.hid/b.ts" }));
+  expect(shown).toBe(true);
+  await ui.press({ key: "mark" });
+  expect(log.toasts.at(-1)).toMatch(/Arrow onto a file first/);
+  await ui.unmount();
+});

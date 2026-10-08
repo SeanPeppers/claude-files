@@ -1,4 +1,4 @@
-import { expect, test } from "claude-code/testing";
+import { expect, mock, test } from "claude-code/testing";
 
 import { wrappedRows } from "../hooks/rank";
 import { posix } from "./posix";
@@ -63,6 +63,7 @@ for (const [COLUMNS, BODY_ROWS] of [
   [90, 11],
 ] as const)
   test(`list, search and lines stay within ${BODY_ROWS} rows at ${COLUMNS} columns`, async ($, on) => {
+    const clock = mock.clock(on);
     on("session.cwd", () => ({ value: "/p" }));
     on("fs.list", (_: any, e: any) => {
       const dir = posix(e.path);
@@ -114,6 +115,17 @@ for (const [COLUMNS, BODY_ROWS] of [
     expect(await ui.find({ key: "more:above" })).toBeDefined();
     expect(await ui.find({ key: "more:below" })).toBeDefined();
     expect(heightOf(await ui.drawn(), COLUMNS)).toBeLessThanOrEqual(BODY_ROWS);
+
+    // The preview, where it fits, takes its rows from the list, not the pane.
+    await ui.press({ key: "peek" });
+    await focus("row:f02.ts");
+    await clock.advance(200);
+    let previewed = false;
+    for (let i = 0; i < 50 && !previewed; i++)
+      previewed = (await ui.find({ text: /^line 1$/ })) !== undefined;
+    expect(previewed).toBe(COLUMNS >= 40 && BODY_ROWS >= 20);
+    expect(heightOf(await ui.drawn(), COLUMNS)).toBeLessThanOrEqual(BODY_ROWS);
+    await ui.press({ key: "peek" });
 
     await focus("row:f01.ts");
     await ui.press({ key: "lines" });
