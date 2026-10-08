@@ -149,8 +149,8 @@ Untracked files are listed one by one, hidden ones included; files deleted
 from the working tree are left out, since there is nothing to mention, and a
 renamed file shows under its new name. Outside a repository, or when git is
 missing or fails, the pane says so. The list stops at 20,000 files (or 4 MiB
-of git output) and says when it did. Press `g` again from the folder list to
-see changes made since.
+of git output) and says which limit it hit. Press `g` again from the folder
+list to see changes made since.
 
 **Lines** (after `l`)
 

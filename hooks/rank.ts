@@ -409,6 +409,8 @@ export type Walk = {
   capped: boolean;
   deep: boolean;
   foldersCapped: boolean;
+  // Git's output ran past the engine's 4 MiB limit and was cut there.
+  cut?: boolean;
 };
 
 // Lists `root` and its subfolders breadth first, one folder per `list` call.
@@ -598,7 +600,7 @@ export const gitStatusCall = (root: string) => {
 // to the repository root with `/` separators and never quoted, so spaces and
 // newlines arrive as they are. Files gone from the working tree are left out:
 // there's nothing left to mention. Output cut at the engine's limit ends
-// mid-record, so its last piece is dropped and the result is capped.
+// mid-record, so its last piece is dropped and the result says it was cut.
 export const parseGitStatus = (
   root: string,
   out: string,
@@ -627,5 +629,7 @@ export const parseGitStatus = (
       status: code.trim(),
     });
   }
-  return { hits, capped: truncated, deep: false, foldersCapped: false };
+  return truncated
+    ? { hits, capped: false, deep: false, foldersCapped: false, cut: true }
+    : { hits, capped: false, deep: false, foldersCapped: false };
 };

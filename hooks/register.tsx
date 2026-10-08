@@ -1313,6 +1313,7 @@ export const register: Register = (on) => {
         );
       const caps = [
         walk?.capped && `first ${WALK_MAX_FILES.toLocaleString("en-US")} files`,
+        walk?.cut && "git output cut at 4 MiB",
         walk?.foldersCapped &&
           `first ${WALK_MAX_FOLDERS.toLocaleString("en-US")} folders`,
         walk?.deep && `folders over ${WALK_MAX_DEPTH} levels deep skipped`,

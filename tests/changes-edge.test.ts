@@ -126,7 +126,7 @@ test("parse: renames with spaces, dash and unicode names, odd codes", async () =
   // A rename whose old path is cut off by the output limit keeps the new one.
   const cut = parseGitStatus("/r", "R  to.ts\0fro", true);
   expect(cut.hits.map((h) => h.rel)).toEqual(["to.ts"]);
-  expect(cut.capped).toBe(true);
+  expect(cut.cut).toBe(true);
   // A cut that lands exactly on a record end loses nothing.
   expect(
     parseGitStatus("/r", " M a\0 M b\0", true).hits.map((h) => h.rel),

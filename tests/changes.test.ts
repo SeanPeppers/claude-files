@@ -67,14 +67,16 @@ test("git status: Windows roots get native separators", async () => {
   );
 });
 
-test("git status: a cut or overlong output is capped", async () => {
+test("git status: a cut output says so; an overlong one is capped", async () => {
   const cut = parseGitStatus("/r", " M a.ts\0 M b.ts\0 M par", true);
   expect(cut.hits.map((hit) => hit.rel)).toEqual(["a.ts", "b.ts"]);
-  expect(cut.capped).toBe(true);
+  expect(cut.cut).toBe(true);
+  expect(cut.capped).toBe(false);
   const many = Array.from({ length: 30 }, (_, i) => `?? f${i}.ts\0`).join("");
   const capped = parseGitStatus("/r", many, false, 25);
   expect(capped.hits).toHaveLength(25);
   expect(capped.capped).toBe(true);
+  expect(capped.cut).toBeUndefined();
   expect(parseGitStatus("/r", many, false, 30).capped).toBe(false);
 });
 
@@ -340,7 +342,8 @@ test("an output over the engine's limit says it was cut", async ($, on) => {
   wire(on, { run: { stdout: " M a.ts\0 M b", truncated: true } });
   const ui = await mount($);
   await ui.press({ key: "changes" });
-  expect(await until(ui, { text: /first 20,000 files/ })).toBe(true);
+  expect(await until(ui, { text: /git output cut at 4 MiB/ })).toBe(true);
+  expect(await ui.find({ text: /first 20,000 files/ })).toBeUndefined();
   expect(await ui.find({ key: "hit:/p/a.ts" })).toBeDefined();
   expect(await ui.find({ key: "hit:/p/b" })).toBeUndefined();
   await ui.unmount();
