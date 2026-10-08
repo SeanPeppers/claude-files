@@ -1,4 +1,4 @@
-import { expect, test } from "claude-code/testing";
+import { expect, mock, test } from "claude-code/testing";
 
 import { wrappedRows } from "../hooks/rank";
 import { posix } from "./posix";
@@ -60,7 +60,10 @@ for (const [COLUMNS, BODY_ROWS] of [
   [40, 9],
   [90, 11],
 ] as const)
-  test(`list, search and lines stay within ${BODY_ROWS} rows at ${COLUMNS} columns`, async ($, on) => {
+  test(`list, search, recent and lines stay within ${BODY_ROWS} rows at ${COLUMNS} columns`, async ($, on) => {
+    mock.store(on, {
+      recent: { "/p": NAMES.slice(0, 10).map((name) => `/p/${name}`) },
+    });
     on("session.cwd", () => ({ value: "/p" }));
     on("fs.list", (_: any, e: any) => {
       const dir = posix(e.path);
@@ -126,6 +129,13 @@ for (const [COLUMNS, BODY_ROWS] of [
     for (let i = 0; i < 200 && !landed; i++)
       landed = (await ui.find({ key: "hit:/p/f00.ts" })) !== undefined;
     expect(landed).toBe(true);
+    await ui.press({ key: "more:below" });
+    expect(await ui.find({ key: "more:above" })).toBeDefined();
+    expect(heightOf(await ui.drawn(), COLUMNS)).toBeLessThanOrEqual(BODY_ROWS);
+
+    await ui.press({ key: "folders" });
+    await ui.press({ key: "recent" });
+    expect(await ui.find({ key: "hit:/p/f00.ts" })).toBeDefined();
     await ui.press({ key: "more:below" });
     expect(await ui.find({ key: "more:above" })).toBeDefined();
     expect(heightOf(await ui.drawn(), COLUMNS)).toBeLessThanOrEqual(BODY_ROWS);

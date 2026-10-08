@@ -4,6 +4,16 @@ All notable changes to this plugin are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the plugin
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `r` in the folder list shows the last 10 files you added to the prompt from
+  this working directory, newest first, kept between sessions in the
+  plugin's own store (`$.store`). Enter, `l` and `m` work on them as on any
+  file, the filter narrows them, deleted files drop out, and secrets files
+  still ask first. README "Safety" says what is stored.
+
 ## [0.4.3] - 2026-10-07
 
 ### Changed
