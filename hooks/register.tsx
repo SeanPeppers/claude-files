@@ -6,6 +6,7 @@ import {
   findLine,
   fitCells,
   fitCellsStart,
+  headLines,
   humanSize,
   isBinaryText,
   isInside,
@@ -15,7 +16,10 @@ import {
   isShown,
   joinPath,
   mentionFor,
+  PEEK_CHROME_ROWS,
+  PEEK_MAX_BYTES,
   parentOf,
+  peekLines,
   previewLine,
   rangeLabel,
   rangeOf,
@@ -73,6 +77,10 @@ const MARKED_STATE = { plugin: "file-picker", key: "marked" } as const;
 // count bumped when a project walk finishes, so the pane redraws.
 const SEARCH_STATE = { plugin: "file-picker", key: "search" } as const;
 const WALKED_STATE = { plugin: "file-picker", key: "walked" } as const;
+// Whether the list previews the highlighted file, and a count bumped when a
+// preview read lands, so the pane redraws.
+const PEEK_STATE = { plugin: "file-picker", key: "peek" } as const;
+const PEEKED_STATE = { plugin: "file-picker", key: "peeked" } as const;
 
 // Rows of the list or of the file that fit in the pane, as last drawn. Both
 // are drawn a window at a time: a pane taller than its tree takes the arrows
@@ -89,6 +97,16 @@ let lastFind = -1;
 const approved = new Set<string>();
 // What the confirm screen is asking about: where the row really leads.
 let confirmTarget: { real: string; escapes: boolean } | undefined;
+// The browsing preview: what it shows for the row `key`, the lines it has
+// room for as last drawn (0: none, so nothing is read), the read waiting for
+// the arrows to rest, and a count that lets a newer read beat an older one.
+let peekView:
+  | { key: string; path: string; lines: string[]; notice: string }
+  | undefined;
+let peekFits = 0;
+let peekTimer: { cancel: () => void } | undefined;
+let peekTicket = 0;
+const PEEK_DELAY_MS = 120;
 
 type State = PluginState["file-picker"];
 const INITIAL: State = {
@@ -106,6 +124,8 @@ const INITIAL: State = {
   marked: [] as string[],
   search: false,
   walked: 0,
+  peek: false,
+  peeked: 0,
 };
 
 // The plugin directory lets `$` go only to functions declared in this file,
@@ -214,6 +234,20 @@ async function heldState<K extends keyof State>(
         version: held.version,
       };
     }
+    case "peek": {
+      const held = await $.state.get(PEEK_STATE);
+      return {
+        value: (held.value ?? INITIAL.peek) as State[K],
+        version: held.version,
+      };
+    }
+    case "peeked": {
+      const held = await $.state.get(PEEKED_STATE);
+      return {
+        value: (held.value ?? INITIAL.peeked) as State[K],
+        version: held.version,
+      };
+    }
   }
   throw new Error(`unknown state ${key}`);
 }
@@ -319,6 +353,20 @@ async function writeState<K extends keyof State>(
     case "walked": {
       const next = value as State["walked"];
       const done = await $.state.set(WALKED_STATE, next, {
+        ifVersion: version,
+      });
+      return done.isSet;
+    }
+    case "peek": {
+      const next = value as State["peek"];
+      const done = await $.state.set(PEEK_STATE, next, {
+        ifVersion: version,
+      });
+      return done.isSet;
+    }
+    case "peeked": {
+      const next = value as State["peeked"];
+      const done = await $.state.set(PEEKED_STATE, next, {
         ifVersion: version,
       });
       return done.isSet;
@@ -548,6 +596,7 @@ async function slide($: EngineInterface, by: 1 | -1) {
   // Recorded here too: the focus event a slide raises can arrive before the
   // new rows draw, and m or l would then act on the row left behind.
   focusedKey = target;
+  void schedulePeek($).catch(() => undefined);
   await focusFirst($, [target]);
 }
 
@@ -780,6 +829,66 @@ async function insertMarked($: EngineInterface) {
   );
 }
 
+// What the preview says about `path`: its first lines, or a one-line notice
+// for anything it won't read. Secrets files are never read here, confirmed
+// or not, and neither is a link that leads out of the project.
+async function peekAt($: EngineInterface, path: string) {
+  const notice = (text: string) => ({ lines: [] as string[], notice: text });
+  const file = await resolveFile($, path);
+  if (!file) return notice("can't be read");
+  if (file.stat.kind === "dir") return notice("a folder: Enter opens it");
+  if (file.stat.kind !== "file") return notice("not a regular file");
+  if (isSecretPath(path) || isSecretPath(file.real))
+    return notice("looks like a secrets file: not previewed");
+  if (file.escapes)
+    return notice("a link that leads out of the project: not previewed");
+  if (file.stat.size > PEEK_MAX_BYTES)
+    return notice(
+      `${humanSize(file.stat.size)}, too big to preview: l shows it line by line`,
+    );
+  let text: string;
+  try {
+    text = await $.fs.read(file.real);
+  } catch {
+    return notice("can't be read");
+  }
+  if (isBinaryText(text)) return notice("binary file");
+  if (text === "") return notice("(empty file)");
+  return { lines: headLines(text, peekFits), notice: "" };
+}
+
+async function loadPeek($: EngineInterface) {
+  const ticket = ++peekTicket;
+  const key = focusedKey;
+  const path = key.startsWith("hit:")
+    ? key.slice(4)
+    : key.startsWith("row:") && key !== PARENT_KEY
+      ? joinPath(await currentDir($), key.slice(4))
+      : "";
+  const shown = path ? await peekAt($, path) : { lines: [], notice: "" };
+  // The ring moved on while this read ran: the newer read draws instead.
+  if (ticket !== peekTicket) return;
+  peekTimer = undefined;
+  peekView = { key, path, ...shown };
+  await updateState($, "peeked", (n) => n + 1);
+}
+
+// Reads the highlighted file once the arrows rest on it, so holding an arrow
+// down reads nothing until it stops.
+async function schedulePeek($: EngineInterface) {
+  peekTimer?.cancel();
+  peekTimer = undefined;
+  peekTicket++;
+  if (peekFits === 0 || previewLines || !(await readState($, "peek"))) return;
+  const fire = () => void loadPeek($).catch(() => undefined);
+  peekTimer = $.clock.after(PEEK_DELAY_MS, fire);
+}
+
+async function togglePeek($: EngineInterface) {
+  await updateState($, "peek", (v) => !v);
+  await schedulePeek($);
+}
+
 export const register: Register = (on) => {
   on("session.start", async ($, e, next) => {
     await $.command.register({
@@ -798,6 +907,7 @@ export const register: Register = (on) => {
     previewLines = undefined;
     listing = undefined;
     project = undefined;
+    peekView = undefined;
     await updateState($, "search", () => false);
     await updateState($, "preview", () => "");
     await updateState($, "anchor", () => 0);
@@ -826,6 +936,7 @@ export const register: Register = (on) => {
         ? Number(focusedKey.slice(5))
         : 0;
       await updateState($, "focusLine", () => line);
+      void schedulePeek($).catch(() => undefined);
     }
     return result;
   }).catch((_$, e, next) => next(e));
@@ -1048,18 +1159,74 @@ export const register: Register = (on) => {
         {hiddenLabel}
       </Button>
     );
+    const peeking = await readState($, "peek");
+    // Read so the pane redraws when a preview read lands.
+    if (peeking) await readState($, "peeked");
+    const peekLabel = peeking ? "hide preview" : "preview";
+    const peekButton = (
+      <Button
+        key="peek"
+        plain
+        hotkey="p"
+        dimColor
+        onPress={() => togglePeek($)}
+      >
+        {peekLabel}
+      </Button>
+    );
+    // The list's rows: what the pane leaves it, less the preview's share when
+    // the preview is on and fits.
+    const listRoom = (footerRows: number) => {
+      const room =
+        e.props.scroll.bodyRows - LIST_CHROME_ROWS - (footerRows - 1) + saved;
+      peekFits = peekLines(room, e.props.bodyColumns, compact);
+      const peekRows =
+        peeking && peekFits > 0 ? peekFits + PEEK_CHROME_ROWS : 0;
+      return Math.max(1, room - peekRows);
+    };
+    // The last file stays up while the read for the next row waits, so the
+    // arrows don't flash the hint; once nothing is pending, a preview of a
+    // row the ring has left (the list changed under it) gives way to the hint.
+    const peekBox = () => {
+      if (!peeking || peekFits === 0) return undefined;
+      const shown =
+        peekView?.path && (peekView.key === focusedKey || peekTimer)
+          ? peekView
+          : undefined;
+      return (
+        <Box key="peek:box" flexDirection="column" marginTop={1}>
+          <Text bold dimColor wrap="truncate-start">
+            {shown ? relative(shown.path) : "preview"}
+          </Text>
+          {!shown || shown.notice ? (
+            <Text dimColor italic wrap="truncate-end">
+              {shown ? shown.notice : "arrow onto a file to preview it"}
+            </Text>
+          ) : (
+            shown.lines.slice(0, peekFits).map((line, i) => (
+              <Text key={`peek:${i}`} wrap="truncate-end">
+                {previewLine(line, e.props.bodyColumns - 2) || " "}
+              </Text>
+            ))
+          )}
+        </Box>
+      );
+    };
 
     if (await readState($, "search")) {
       // Read so the pane redraws when the walk lands.
       await readState($, "walked");
       const footerRows = wrappedRows(
-        ["l: lines", "f: folders", `h: ${hiddenLabel}`, ...markLabels],
+        [
+          "l: lines",
+          "f: folders",
+          `h: ${hiddenLabel}`,
+          `p: ${peekLabel}`,
+          ...markLabels,
+        ],
         e.props.bodyColumns,
       );
-      listRows = Math.max(
-        1,
-        e.props.scroll.bodyRows - LIST_CHROME_ROWS - (footerRows - 1) + saved,
-      );
+      listRows = listRoom(footerRows);
       const walk = project?.walk;
       const hits = walk ? rankedHits(walk, query, showHidden) : [];
       const offset = Math.min(
@@ -1178,6 +1345,7 @@ export const register: Register = (on) => {
               {`↓ ${below} more`}
             </Button>
           )}
+          {peekBox()}
           <Box
             flexDirection="row"
             flexWrap="wrap"
@@ -1203,6 +1371,7 @@ export const register: Register = (on) => {
               folders
             </Button>
             {hiddenButton}
+            {peekButton}
             <Button
               key="mark"
               plain
@@ -1263,14 +1432,12 @@ export const register: Register = (on) => {
         "c: cwd",
         `h: ${hiddenLabel}`,
         "a: @ folder",
+        `p: ${peekLabel}`,
         ...markLabels,
       ],
       e.props.bodyColumns,
     );
-    listRows = Math.max(
-      1,
-      e.props.scroll.bodyRows - LIST_CHROME_ROWS - (footerRows - 1) + saved,
-    );
+    listRows = listRoom(footerRows);
     const pathMode = isPathQuery(query);
     const ranked = pathMode ? [] : rankEntries(listed, query, showHidden);
     // Counted by the rule the ranking uses: hidden entries count only when
@@ -1404,6 +1571,7 @@ export const register: Register = (on) => {
             {`↓ ${below} more`}
           </Button>
         )}
+        {peekBox()}
         <Box
           flexDirection="row"
           flexWrap="wrap"
@@ -1445,6 +1613,7 @@ export const register: Register = (on) => {
             cwd
           </Button>
           {hiddenButton}
+          {peekButton}
           <Button
             key="here"
             plain

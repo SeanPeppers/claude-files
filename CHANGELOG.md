@@ -4,6 +4,17 @@ All notable changes to this plugin are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the plugin
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `p` previews the highlighted file under the folder list or the search
+  results: its first lines, read once the arrows rest on it. It is off until
+  you press `p` and stays on for the session. Secrets files are never
+  previewed (even after a yes), nor binary files, links that lead out of the
+  project or files over 64 KiB; each gets a one-line notice instead. The
+  preview shows only in a pane of at least 20 rows and 40 columns.
+
 ## [0.4.3] - 2026-10-07
 
 ### Changed
