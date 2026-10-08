@@ -531,10 +531,13 @@ export const recentByDir = (stored: unknown): RecentByDir =>
           )
           .map(([dir, paths]) => [
             dir,
-            paths
-              .filter((path): path is string => typeof path === "string")
-              .filter((path) => path !== "")
-              .slice(0, RECENT_MAX),
+            [
+              ...new Set(
+                paths
+                  .filter((path): path is string => typeof path === "string")
+                  .filter((path) => path !== ""),
+              ),
+            ].slice(0, RECENT_MAX),
           ]),
       );
 

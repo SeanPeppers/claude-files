@@ -24,6 +24,9 @@ test("recentByDir keeps only well-formed lists from the store", async () => {
   ).toEqual({ "/p": ["/p/a.ts", "/p/b.ts"] });
   const long = Array.from({ length: 30 }, (_, i) => `/p/f${i}`);
   expect(recentByDir({ "/p": long })["/p"]).toHaveLength(RECENT_MAX);
+  expect(
+    recentByDir({ "/p": ["/p/a.ts", "/p/b.ts", "/p/a.ts", "/p/a.ts"] }),
+  ).toEqual({ "/p": ["/p/a.ts", "/p/b.ts"] });
   // A hand-edited `__proto__` key stays plain data, never a prototype.
   const parsed = recentByDir(JSON.parse('{"__proto__": ["/x"]}'));
   expect(Object.getPrototypeOf(parsed)).toBe(Object.prototype);
