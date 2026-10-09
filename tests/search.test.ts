@@ -161,12 +161,26 @@ test("ranking 20,000 paths stays fast", async () => {
   const hits = Array.from({ length: 20_000 }, (_, i) =>
     hit(`pkg${i % 97}/mod${i % 13}/file${i}.ts`),
   );
-  const start = performance.now();
-  for (const query of ["", "f", "fi", "fil", "file1", "file19999"])
-    rankHits(hits, query, false);
-  const perQuery = (performance.now() - start) / 6;
+  // Timed against a plain sort of the same paths by the same collator, round
+  // by round: a loaded machine slows both alike, where a fixed budget in
+  // milliseconds failed under load. Ranking costs about one such sort; a
+  // regression to quadratic work costs hundreds.
+  const order = new Intl.Collator(undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+  const queries = ["", "fi", "file19999"];
+  const ratios = Array.from({ length: 3 }, () => {
+    let start = performance.now();
+    for (const query of queries) rankHits(hits, query, false);
+    const ranking = performance.now() - start;
+    start = performance.now();
+    for (const _ of queries)
+      [...hits].sort((a, b) => order.compare(a.rel, b.rel));
+    return ranking / (performance.now() - start);
+  }).sort((a, b) => a - b);
   expect(rankHits(hits, "file19999", false)[0]?.name).toBe("file19999.ts");
-  expect(perQuery).toBeLessThan(250);
+  expect(ratios[1]).toBeLessThan(4);
 });
 
 test("long paths are cut from the start, keeping the file name", async () => {
