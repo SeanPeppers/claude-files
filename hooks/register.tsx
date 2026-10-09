@@ -952,9 +952,11 @@ let pendingSlide:
   | undefined;
 
 // Which list a window offset belongs to: a slide's offset means nothing to a
-// press in another folder, in search or in a file's lines.
+// press in another folder, in search, in git's changes, in the recent files
+// or in a file's lines.
 async function listShown($: EngineInterface) {
   if (previewLines) return `lines:${previewLines.path}`;
+  if (await readState($, "recentView")) return "recent";
   if (await readState($, "search"))
     return (await readState($, "changes")) ? "changes" : "search";
   return `dir:${await currentDir($)}`;

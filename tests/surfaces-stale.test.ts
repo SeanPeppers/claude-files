@@ -1,10 +1,10 @@
-import { expect, test } from "claude-code/testing";
+import { expect, mock, test } from "claude-code/testing";
 
 import { posix } from "./posix";
 
 // A phone paging past the end of a filtered list the desktop drew, while
 // the desktop still draws and after its client left: in the folder, in
-// search and in line view. A focus event names no surface, so a surface
+// search, in the recent files and in line view. A focus event names no surface, so a surface
 // that stopped drawing must stop steering the slide.
 
 const file = (name: string) => ({
@@ -111,10 +111,11 @@ const pageAround = async (
   pages: number,
   nameAt: (i: number) => string,
   total: number,
+  filtered = FILTERED,
 ) => {
   const rows = (await shown(phone, prefix)).length;
   expect(rows).toBeGreaterThan(0);
-  expect(pages * rows).toBeGreaterThan(FILTERED);
+  expect(pages * rows).toBeGreaterThan(filtered);
   let offset = 0;
   for (let page = 1; page <= pages; page++) {
     await tap($, phone, "more:below");
@@ -162,6 +163,65 @@ for (const view of ["folder", "search"] as const)
       await phone.unmount();
       if (!left) await desk.unmount();
     });
+
+// Recent files keep 10, newest first: seven a files, then the three b files
+// the desktop's filter leaves. The phone's pane is short enough to page them.
+const RECENT = [...many("a", 7), ...many("b", 3)].map((f) => `/p/${f.name}`);
+const recentAt = (i: number) => RECENT[i]?.slice(3) ?? "";
+const PHONE_ROWS = 9;
+
+for (const left of [false, true])
+  test(`phone pages past the desktop's filtered recent files${left ? " after the desktop left" : ""}`, async ($, on) => {
+    mock.store(on, { recent: { "/p": RECENT } });
+    const log = wire(on, TREE);
+    const desk = await mount($, "desktop", 14);
+    await desk.press({ key: "recent" });
+    await desk.input({ key: "filter", text: "b", kind: "change" });
+    expect(
+      await waitFor(async () => (await shown(desk, "hit:/p/"))[0] === "b00.ts"),
+    ).toBe(true);
+    if (left) {
+      await desk.unmount();
+      await $.session.detach({
+        surface: "desktop",
+        clientId: "desk",
+        reason: "detach",
+      });
+    }
+    const phone = await mount($, "mobile", PHONE_ROWS);
+    // No box on the phone, so it shows every recent file, newest first.
+    expect((await shown(phone, "hit:/p/"))[0]).toBe("a00.ts");
+    const rows = (await shown(phone, "hit:/p/")).length;
+    // Pages that stop short of the end, so each one draws a ↓ more row.
+    const pages = Math.floor((RECENT.length - rows) / rows);
+    await pageAround($, phone, "hit:/p/", pages, recentAt, RECENT.length, 3);
+    if (left) {
+      // The phone alone: the slide walks its own unfiltered recent files.
+      await tap($, phone, "more:below");
+      await phone.press({ key: "lines" });
+      expect(log.read).toEqual([`/p/${recentAt(pages * rows)}`]);
+    }
+    await phone.unmount();
+    if (!left) await desk.unmount();
+  });
+
+test("a slide left over from the folder doesn't page the recent files", async ($, on) => {
+  mock.store(on, { recent: { "/p": RECENT } });
+  wire(on, TREE);
+  const phone = await mount($, "mobile", PHONE_ROWS);
+  await tap($, phone, "more:below");
+  await tap($, phone, "more:below");
+  // A focus on ↓ more slides the folder; that row is never pressed.
+  await focusOn($, "more:below");
+  await phone.press({ key: "recent" });
+  expect((await shown(phone, "hit:/p/"))[0]).toBe("a00.ts");
+  const rows = (await shown(phone, "hit:/p/")).length;
+  // Pressed with no focus of its own, the row pages the recent files from
+  // their top, not from where the folder's window was.
+  await phone.press({ key: "more:below" });
+  expect((await shown(phone, "hit:/p/"))[0]).toBe(recentAt(rows));
+  await phone.unmount();
+});
 
 for (const left of [false, true])
   test(`phone pages a file's lines past the desktop's window${left ? " after the desktop left" : ""}`, async ($, on) => {
