@@ -179,6 +179,8 @@ footer button grows or shrinks), the highlight goes
 to the button pressed, so pressing it again undoes it. When `m` or `i` brings,
 grows or takes away the `insert` button and that rewraps the footer, the list
 scrolls to keep the highlighted row in view and the highlight stays on it.
+The line view does the same for the line you start a range on, end it on or
+clear its start from when `clear start` rewraps its footer.
 
 The folder is listed when you open it; reopen `/files` to see files added since.
 

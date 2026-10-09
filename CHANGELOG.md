@@ -29,6 +29,11 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - In a pane under 39 columns the line view's footer (`files`, `whole file`,
   `clear start`) wraps, and the rows it took were not counted, so the lines
   ran past the pane and the arrows scrolled it instead of moving.
+  Counting them, starting a range there brought the `clear start` button,
+  whose wrap took a line from the view: the line just pressed dropped out of
+  it and the highlight landed on "more". The line view now scrolls to keep
+  the highlighted line in view when a range is started, ended or cleared,
+  and the highlight stays on it.
 - After `h` the highlight stayed at the same place on the screen while the
   rows moved under it, so it sat on another row while `l` and `m` answered
   "Arrow onto a file first". When `h` moves the highlighted row (its longer

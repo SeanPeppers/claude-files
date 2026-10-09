@@ -218,6 +218,57 @@ test("i that clears the marks keeps the highlighted row at the list's end in vie
   await ui.unmount();
 });
 
+const drawnLines = async (ui: any) =>
+  (await ui.findAll({ type: "Button" }))
+    .map((button: any) => button.key)
+    .filter((key: string) => key?.startsWith("line:"));
+
+const eightyLines = () => ({
+  "a.txt": Array.from({ length: 80 }, (_, i) => `text ${i + 1}`).join("\n"),
+});
+
+// Below 39 columns "x: clear start" wraps the line view's footer onto
+// another row, so starting a range takes a line from the view.
+test("a range start that wraps the footer keeps its line in view", async ($, on) => {
+  mock.clock(on);
+  const log = wire(on, "/p", eightyLines());
+  const ui = await mount($, 20, 30);
+  await arrowOnto($, "row:a.txt");
+  await ui.press({ key: "lines" });
+  const before = await drawnLines(ui);
+  const last = before.at(-1);
+  await arrowOnto($, last);
+  await ui.press({ key: last });
+  expect(log.toasts.at(-1)).toMatch(/Range starts at line 10/);
+  const after = await drawnLines(ui);
+  expect(after.length).toBe(before.length - 1);
+  expect(after.at(-1)).toBe(last);
+  await ui.unmount();
+});
+
+// At the file's end the start and x move the window by a line each way, so
+// each one puts the ring back through the f button's other key.
+test("starting and clearing a range at the file's end keep the last line in view", async ($, on) => {
+  mock.clock(on);
+  wire(on, "/p", eightyLines());
+  const ui = await mount($, 20, 30);
+  await arrowOnto($, "row:a.txt");
+  await ui.press({ key: "lines" });
+  while (await ui.find({ key: "more:below" }))
+    await ui.press({ key: "more:below" });
+  await arrowOnto($, "line:80");
+  const keyBefore = (await ui.find({ key: "files" })) ? "files" : "files:again";
+  const keyAfter = keyBefore === "files" ? "files:again" : "files";
+  await ui.press({ key: "line:80" });
+  expect((await drawnLines(ui)).at(-1)).toBe("line:80");
+  expect(await ui.find({ key: keyAfter })).toBeDefined();
+  await ui.press({ key: "clear start" });
+  expect(await ui.find({ key: "clear start" })).toBeUndefined();
+  expect((await drawnLines(ui)).at(-1)).toBe("line:80");
+  expect(await ui.find({ key: keyBefore })).toBeDefined();
+  await ui.unmount();
+});
+
 // Each m or i that puts the ring back draws the m button under the key it
 // wasn't under, so the ring's first stop is never one already on screen.
 test("m then i that both move the row each draw the m button under a new key", async ($, on) => {

@@ -49,6 +49,7 @@ const PANE = "file-picker";
 const MORE_ABOVE = "more:above";
 const MORE_BELOW = "more:below";
 const MARK_AGAIN = "mark:again";
+const FILES_AGAIN = "files:again";
 // List: header, filter box (3), '..' (or search's limits line), the two "more"
 // rows, the footer with its margin, hint; a footer that wraps takes more
 // (wrappedRows). Lines: header, status, find box (3), the two "more" rows,
@@ -108,10 +109,14 @@ type Footer = { peek: boolean; hidden: boolean; marks: number };
 // The list's rows as last drawn, under a footer changed by `change`, so a
 // press knows the rows it is about to leave.
 let listRowsAfter = (_change: Partial<Footer>) => listRows;
-// Which of two keys the m button is drawn under. A press that has to put the
-// ring back flips it, so the key the ring is first sent to is not on screen
-// yet and the focus waits for the redraw.
+// Which of two keys the m button and the line view's f button are drawn
+// under. A press that has to put the ring back flips one, so the key the ring
+// is first sent to is not on screen yet and the focus waits for the redraw.
 let markAgain = false;
+let filesAgain = false;
+// The line view's rows as last drawn, with or without a range start: its
+// "x: clear start" button can wrap the footer.
+let lineRowsAfter = (_anchored: boolean) => lineRows;
 // The row the ring is on, so `l` knows which file to open line by line.
 let focusedKey = "";
 // The previewed file's lines, read once when the line view opens.
@@ -904,11 +909,38 @@ async function pressLine($: EngineInterface, n: number) {
   const path = await readState($, "preview");
   const anchor = await readState($, "anchor");
   if (!anchor) {
-    await updateState($, "anchor", () => n);
+    await setAnchor($, n, n);
     return $.ui.toast(`Range starts at line ${n}: Enter on the last line`);
   }
-  await updateState($, "anchor", () => 0);
+  await setAnchor($, 0, n);
   return pickFile($, path, rangeOf(anchor, n));
+}
+
+// The "x: clear start" button a range start brings (and its end or x takes
+// away) can rewrap the footer and so move the lines, as m does the list's
+// rows: the line the ring is on is kept in view and, when its place in the
+// pane's order changes, the ring is put back on it.
+async function setAnchor($: EngineInterface, anchor: number, ringLine: number) {
+  const total = previewLines?.lines.length ?? 0;
+  const offset = Math.min(
+    await readState($, "lineOffset"),
+    Math.max(0, total - lineRows),
+  );
+  const index = ringLine - 1;
+  const kept = windowAround(index, offset, lineRowsAfter(anchor > 0), total);
+  const drawn = index >= offset && index < offset + lineRows;
+  // "↑ N more" comes before the lines, so it counts toward the place too.
+  const placeAt = (first: number) => (first > 0 ? 1 : 0) + index - first;
+  const moved = drawn && placeAt(kept) !== placeAt(offset);
+  if (moved) filesAgain = !filesAgain;
+  // The start first, as setMarks writes the marks first: the redraw between
+  // the two writes has the line out of view or already clamped to `kept`.
+  await updateState($, "anchor", () => anchor);
+  if (!drawn) return;
+  await updateState($, "lineOffset", () => kept);
+  if (!moved) return;
+  await focusFirst($, [filesAgain ? FILES_AGAIN : "files"]);
+  await ringToLine($, ringLine);
 }
 
 async function findInLines($: EngineInterface, query: string) {
@@ -1217,18 +1249,25 @@ export const register: Register = (on) => {
     if (preview && previewLines?.path === preview) {
       const anchor = await readState($, "anchor");
       // The chrome counts one footer row; a narrow pane wraps the buttons.
-      const footerRows = wrappedRows(
-        [
-          "f: files",
-          "w: whole file",
-          ...(anchor > 0 ? ["x: clear start"] : []),
-        ],
-        e.props.bodyColumns,
-      );
-      lineRows = Math.max(
-        1,
-        e.props.scroll.bodyRows - LINES_CHROME_ROWS - (footerRows - 1) + saved,
-      );
+      const rowsWith = (anchored: boolean) => {
+        const footerRows = wrappedRows(
+          [
+            "f: files",
+            "w: whole file",
+            ...(anchored ? ["x: clear start"] : []),
+          ],
+          e.props.bodyColumns,
+        );
+        return Math.max(
+          1,
+          e.props.scroll.bodyRows -
+            LINES_CHROME_ROWS -
+            (footerRows - 1) +
+            saved,
+        );
+      };
+      lineRowsAfter = rowsWith;
+      lineRows = rowsWith(anchor > 0);
       const lines = previewLines.lines;
       const ringLine = await readState($, "focusLine");
       const range = anchor && ringLine ? rangeOf(anchor, ringLine) : undefined;
@@ -1333,7 +1372,13 @@ export const register: Register = (on) => {
             columnGap={2}
             marginTop={compact ? 0 : 1}
           >
-            <Button plain hotkey="f" dimColor onPress={() => closeLines($)}>
+            <Button
+              key={filesAgain ? FILES_AGAIN : "files"}
+              plain
+              hotkey="f"
+              dimColor
+              onPress={() => closeLines($)}
+            >
               files
             </Button>
             <Button
@@ -1349,7 +1394,7 @@ export const register: Register = (on) => {
                 plain
                 hotkey="x"
                 dimColor
-                onPress={() => updateState($, "anchor", () => 0)}
+                onPress={() => setAnchor($, 0, ringLine)}
               >
                 clear start
               </Button>
