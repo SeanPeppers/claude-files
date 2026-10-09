@@ -262,8 +262,8 @@ test("starting and clearing a range at the file's end keep the last line in view
   await ui.press({ key: "line:80" });
   expect((await drawnLines(ui)).at(-1)).toBe("line:80");
   expect(await ui.find({ key: keyAfter })).toBeDefined();
-  await ui.press({ key: "clear start" });
-  expect(await ui.find({ key: "clear start" })).toBeUndefined();
+  await ui.press({ key: "clear" });
+  expect(await ui.find({ key: "clear" })).toBeUndefined();
   expect((await drawnLines(ui)).at(-1)).toBe("line:80");
   expect(await ui.find({ key: keyBefore })).toBeDefined();
   await ui.unmount();

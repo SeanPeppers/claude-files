@@ -9,6 +9,7 @@ declare module "claude-code" {
       preview: string;
       lineOffset: number;
       anchor: number;
+      kept: { start: number; end: number }[];
       focusLine: number;
       confirm: string;
       confirmAction: string;

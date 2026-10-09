@@ -21,6 +21,16 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead. The preview shows only in a pane of at least 20 rows and 40
   columns. When turning it on or off moves the highlighted row, the
   highlight goes to the `p` button, so a second `p` turns it off again.
+- Several ranges from one file: in the line view, `k` keeps the range being
+  picked so another can be picked after it. Enter on the last line of the
+  final range, or `i`, puts them all in as separate mentions
+  (`@src/a.ts#L10-20 @src/a.ts#L80-95`), in line order, with overlapping or
+  touching ranges merged. Kept lines show `✓` in the gutter and are listed in
+  the status line; `x` clears them along with the start. The `keep range`
+  and `insert` buttons, reached with Tab, the arrows or a click, take the
+  range on screen just as the keys do, and clicking a line starts a range
+  there wherever the ring was. When those buttons wrap the footer, the view
+  scrolls to keep the highlighted line in view and the highlight stays on it.
 
 ### Fixed
 

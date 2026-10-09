@@ -306,6 +306,24 @@ test("two focus events landing together read once, after the rest", async ($, on
   await ui.unmount();
 });
 
+test("three focus events landing together read the last row once", async ($, on) => {
+  const clock = mock.clock(on);
+  const log = wire(on, {
+    [ROOT]: { "a.ts": "aaa\n", "b.ts": "bbb\n", "c.ts": "ccc\n" },
+  });
+  const ui = await mount($);
+  await ui.press({ key: "peek" });
+  await Promise.all([
+    arrowOnto($, "row:a.ts"),
+    arrowOnto($, "row:b.ts"),
+    arrowOnto($, "row:c.ts"),
+  ]);
+  expect(await rest(clock, ui, /^ccc$/)).toBeDefined();
+  await clock.advance(500);
+  expect(log.reads).toEqual(["/p/c.ts"]);
+  await ui.unmount();
+});
+
 test("a pane that grows shows more of the previewed file without reading again", async ($, on) => {
   const clock = mock.clock(on);
   const body = Array.from({ length: 20 }, (_, i) => `row ${i + 1}`).join("\n");
