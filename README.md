@@ -328,7 +328,7 @@ changes what Claude or its tools do; they only add the pane.
 | `ui.focus` (the Files pane) | remembers the highlighted row for `l`, `m` and the preview, and when the arrows reach a `↑/↓ N more` row, slides the list one row. With the preview on, it starts a short timer whose end reads the highlighted file |
 
 Engine calls it makes: `$.command.register` (the `/files` command),
-`$.fs.list` and `$.fs.stat` (folder listings and file types; project search is `$.fs.list` alone, one folder per call; `r` checks each recent file still exists with `$.fs.stat`; `g` also stats `.git` in the working directory and each folder above it to find the repository root),
+`$.fs.list` and `$.fs.stat` (folder listings and file types; project search is `$.fs.list` alone, one folder per call; `r` checks each recent file still exists with `$.fs.stat`; `g` also stats `.git` in the working directory and each folder above it to find the repository root, then stats the git folder `git rev-parse` names), `$.fs.exists` (`g` checking that folder for `info/attributes`),
 `$.process.run` (only the two git commands above, only when you press `g`; their flags and `GIT_ATTR_NOSYSTEM` keep `.gitattributes` and the global and system attributes files from starting filters, and `status` doesn't run where the git folder holds `info/attributes`, as Safety explains),
 `$.fs.read` (the file you press `l` on, up to 4 MiB, and with the preview on,
 the highlighted file, up to 64 KiB), `$.clock.after` (waits 120 ms for the
