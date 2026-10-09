@@ -1541,7 +1541,11 @@ export const register: Register = (on) => {
     }
 
     // `t` works in every view: the button ends the footer where it fits on a
-    // row the footer already takes, else it sits in the header row.
+    // row the footer already takes, else it sits in the header row. Each view
+    // draws its header after the filter in a reversed column: when the element
+    // holding the ring goes (s or r pressed), the engine moves the ring to the
+    // first element drawn, and a header button there took the typed keys away
+    // from the filter and gave them to the prompt.
     const feedbackButton = (from: string) => (
       <Button
         key="feedback"
@@ -1631,40 +1635,44 @@ export const register: Register = (on) => {
         );
       return (
         <Box flexDirection="column">
-          <Box flexDirection="row" justifyContent="space-between">
-            <Text bold color="claude" wrap="truncate-start">
-              {relative(preview)}
+          <Box flexDirection="column-reverse">
+            {Input && (
+              <Box
+                borderStyle={compact ? undefined : "round"}
+                borderColor="promptBorder"
+                paddingX={compact ? 0 : 1}
+              >
+                <Input
+                  key="find"
+                  placeholder="find text, Enter jumps to the next match"
+                  submitLabel="find"
+                  onSubmit={(value: string) =>
+                    void findInLines($, value).catch(() => undefined)
+                  }
+                />
+              </Box>
+            )}
+            <Text
+              dimColor={!anchor && kept.length === 0}
+              color={anchor || kept.length > 0 ? "suggestion" : undefined}
+              wrap="truncate-end"
+            >
+              {kept.length > 0
+                ? `Kept ${rangesLabel(kept)} · ${status}`
+                : status}
             </Text>
-            <Box gap={2}>
-              <Text
-                dimColor
-              >{`${lines.length} ${lines.length === 1 ? "line" : "lines"}`}</Text>
-              {!feedbackFits && feedbackButton("lines")}
+            <Box flexDirection="row" justifyContent="space-between">
+              <Text bold color="claude" wrap="truncate-start">
+                {relative(preview)}
+              </Text>
+              <Box gap={2}>
+                <Text
+                  dimColor
+                >{`${lines.length} ${lines.length === 1 ? "line" : "lines"}`}</Text>
+                {!feedbackFits && feedbackButton("lines")}
+              </Box>
             </Box>
           </Box>
-          <Text
-            dimColor={!anchor && kept.length === 0}
-            color={anchor || kept.length > 0 ? "suggestion" : undefined}
-            wrap="truncate-end"
-          >
-            {kept.length > 0 ? `Kept ${rangesLabel(kept)} · ${status}` : status}
-          </Text>
-          {Input && (
-            <Box
-              borderStyle={compact ? undefined : "round"}
-              borderColor="promptBorder"
-              paddingX={compact ? 0 : 1}
-            >
-              <Input
-                key="find"
-                placeholder="find text, Enter jumps to the next match"
-                submitLabel="find"
-                onSubmit={(value: string) =>
-                  void findInLines($, value).catch(() => undefined)
-                }
-              />
-            </Box>
-          )}
           {offset > 0 && (
             <Button
               key={MORE_ABOVE}
@@ -1922,59 +1930,61 @@ export const register: Register = (on) => {
       ].filter(Boolean);
       return (
         <Box flexDirection="column">
-          <Box flexDirection="row" justifyContent="space-between">
-            <Text bold color="claude" wrap="truncate-start">
-              {recentView
-                ? `recent in ${relative(cwd)}`
-                : changes
-                  ? `changes ${relative(project?.root || cwd)}`
-                  : `search ${relative(cwd)}`}
-            </Text>
-            <Box gap={2}>
-              <Text dimColor>
-                {total === undefined
-                  ? ""
-                  : query
-                    ? `${hits.length}/${total}`
-                    : `${total}`}
+          <Box flexDirection="column-reverse">
+            {Input && (
+              <Box
+                borderStyle={compact ? undefined : "round"}
+                borderColor="promptBorder"
+                paddingX={compact ? 0 : 1}
+              >
+                <Input
+                  key="filter"
+                  autoFocus
+                  placeholder={
+                    recentView
+                      ? "type to filter recent files"
+                      : changes
+                        ? "type to filter the changed files"
+                        : "type a file name to search the whole project"
+                  }
+                  value={query}
+                  submitLabel="add"
+                  onInput={(value: string) =>
+                    void (async () => {
+                      await updateState($, "query", () => value);
+                      await updateState($, "offset", () => 0);
+                    })().catch(() => undefined)
+                  }
+                  onSubmit={() =>
+                    void (async () => {
+                      await updateState($, "query", () => "");
+                      if (top) await openPath($, top.path);
+                    })().catch(() => undefined)
+                  }
+                />
+              </Box>
+            )}
+            <Box flexDirection="row" justifyContent="space-between">
+              <Text bold color="claude" wrap="truncate-start">
+                {recentView
+                  ? `recent in ${relative(cwd)}`
+                  : changes
+                    ? `changes ${relative(project?.root || cwd)}`
+                    : `search ${relative(cwd)}`}
               </Text>
-              {!listFeedbackFits &&
-                feedbackButton(recentView ? "recent" : "search")}
+              <Box gap={2}>
+                <Text dimColor>
+                  {total === undefined
+                    ? ""
+                    : query
+                      ? `${hits.length}/${total}`
+                      : `${total}`}
+                </Text>
+                {!listFeedbackFits &&
+                  feedbackButton(recentView ? "recent" : "search")}
+              </Box>
             </Box>
           </Box>
-          {Input && (
-            <Box
-              borderStyle={compact ? undefined : "round"}
-              borderColor="promptBorder"
-              paddingX={compact ? 0 : 1}
-            >
-              <Input
-                key="filter"
-                autoFocus
-                placeholder={
-                  recentView
-                    ? "type to filter recent files"
-                    : changes
-                      ? "type to filter the changed files"
-                      : "type a file name to search the whole project"
-                }
-                value={query}
-                submitLabel="add"
-                onInput={(value: string) =>
-                  void (async () => {
-                    await updateState($, "query", () => value);
-                    await updateState($, "offset", () => 0);
-                  })().catch(() => undefined)
-                }
-                onSubmit={() =>
-                  void (async () => {
-                    await updateState($, "query", () => "");
-                    if (top) await openPath($, top.path);
-                  })().catch(() => undefined)
-                }
-              />
-            </Box>
-          )}
           {caps.length > 0 && (
             <Text color="warning" wrap="truncate-end">
               {caps.join(" · ")}
@@ -2178,40 +2188,42 @@ export const register: Register = (on) => {
 
     return (
       <Box flexDirection="column">
-        <Box flexDirection="row" justifyContent="space-between">
-          <Text bold color="claude" wrap="truncate-start">
-            {relative(dir)}
-          </Text>
-          <Box gap={2}>
-            <Text dimColor>
-              {query ? `${ranked.length}/${shownCount}` : `${shownCount}`}
+        <Box flexDirection="column-reverse">
+          {Input && (
+            <Box
+              borderStyle={compact ? undefined : "round"}
+              borderColor="promptBorder"
+              paddingX={compact ? 0 : 1}
+            >
+              <Input
+                key="filter"
+                autoFocus
+                placeholder="type to filter, ../ or /path to jump"
+                value={query}
+                submitLabel={
+                  pathMode ? "go" : top?.kind === "dir" ? "open" : "add"
+                }
+                onInput={(value: string) =>
+                  void filter(value).catch(() => undefined)
+                }
+                onSubmit={(value: string) =>
+                  void submit(value).catch(() => undefined)
+                }
+              />
+            </Box>
+          )}
+          <Box flexDirection="row" justifyContent="space-between">
+            <Text bold color="claude" wrap="truncate-start">
+              {relative(dir)}
             </Text>
-            {!listFeedbackFits && feedbackButton("folder")}
+            <Box gap={2}>
+              <Text dimColor>
+                {query ? `${ranked.length}/${shownCount}` : `${shownCount}`}
+              </Text>
+              {!listFeedbackFits && feedbackButton("folder")}
+            </Box>
           </Box>
         </Box>
-        {Input && (
-          <Box
-            borderStyle={compact ? undefined : "round"}
-            borderColor="promptBorder"
-            paddingX={compact ? 0 : 1}
-          >
-            <Input
-              key="filter"
-              autoFocus
-              placeholder="type to filter, ../ or /path to jump"
-              value={query}
-              submitLabel={
-                pathMode ? "go" : top?.kind === "dir" ? "open" : "add"
-              }
-              onInput={(value: string) =>
-                void filter(value).catch(() => undefined)
-              }
-              onSubmit={(value: string) =>
-                void submit(value).catch(() => undefined)
-              }
-            />
-          </Box>
-        )}
         {pathMode && (
           <Text
             dimColor

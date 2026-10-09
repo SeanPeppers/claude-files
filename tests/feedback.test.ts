@@ -1,6 +1,6 @@
 import { expect, mock } from "claude-code/testing";
 import { LINK_MAX, PLUGIN_VERSION } from "../hooks/rank";
-import { heightOf } from "./height";
+import { heightOf, type Node } from "./height";
 import { test } from "./kit";
 import { posix } from "./posix";
 
@@ -142,8 +142,22 @@ test("/files bug and /files idea open straight to Feedback; /files does not", as
   }
 });
 
+// The first element drawn that can hold the ring, where the engine moves it
+// when the element holding it goes.
+const firstFocusable = (node: Node): string | undefined => {
+  if (typeof node === "string") return undefined;
+  if (["Input", "Button", "Link"].includes(node.type)) return node.props?.key;
+  for (const kid of node.children ?? []) {
+    const key = firstFocusable(kid);
+    if (key) return key;
+  }
+  return undefined;
+};
+
 // The button ends the footer only where it costs no footer row, else it sits
-// in the header; either way t works in every view and the pane still fits.
+// in the header; either way t works in every view, the pane still fits, and
+// the view's own input stays the first element drawn, so a header button
+// never takes the ring (and the typed keys) when s or r redraws the pane.
 for (const [COLUMNS, ROWS] of [
   [120, 40],
   [64, 33],
@@ -171,10 +185,11 @@ for (const [COLUMNS, ROWS] of [
         origin: { kind: "person" },
       });
     // Paged down so both "more" rows show: the tallest each view gets.
-    const fits = async () => {
+    const fits = async (input = "filter") => {
       if (await ui.find({ key: "more:below" }))
         await ui.press({ key: "more:below" });
       expect(heightOf(await ui.drawn(), COLUMNS)).toBeLessThanOrEqual(ROWS);
+      expect(firstFocusable(await ui.drawn())).toBe(input);
       expect(await ui.find({ key: "feedback" })).toBeDefined();
     };
     await fits();
@@ -195,7 +210,7 @@ for (const [COLUMNS, ROWS] of [
     // A started range crowds the footer most.
     await ui.press({ key: "line:1" });
     await focus("line:2");
-    await fits();
+    await fits("find");
     await ui.unmount();
   });
 
