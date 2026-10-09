@@ -455,7 +455,8 @@ test("reopening /files after the changes view starts at the folder list; s walks
   await ui.press({ key: "changes" });
   expect(await until(ui, { key: "hit:/p/src/a.ts" })).toBe(true);
   // Only the command name matters to the /files hook.
-  await $.command.run({ command: "files" } as any);
+  const reopen: any = { command: "files", args: "" };
+  await $.command.run(reopen);
   expect(await until(ui, { key: "row:x.ts" })).toBe(true);
   await ui.press({ key: "search" });
   expect(await until(ui, { key: "hit:/p/x.ts" })).toBe(true);
@@ -515,7 +516,8 @@ test("the filter survives l and f; marks made in changes survive closing and reo
   expect(await ui.find({ key: "hit:/p/b.ts" })).toBeUndefined();
   expect(await ui.find({ text: /^changes / })).toBeDefined();
 
-  await $.command.run({ command: "files" } as any);
+  const reopen: any = { command: "files", args: "" };
+  await $.command.run(reopen);
   expect(await until(ui, { key: "row:x.ts" })).toBe(true);
   await ui.press({ key: "insert" });
   expect(log.filled).toEqual(["@src/a.ts "]);
@@ -678,7 +680,8 @@ test("closing the pane while git runs drops the late answer; g again lists afres
   await first.unmount();
   release();
   const ui = await mount($);
-  await $.command.run({ command: "files" } as any);
+  const reopen: any = { command: "files", args: "" };
+  await $.command.run(reopen);
   expect(await until(ui, { key: "row:x.ts" })).toBe(true);
   expect(await ui.find({ key: "hit:/p/stale.ts" })).toBeUndefined();
   await ui.press({ key: "changes" });
