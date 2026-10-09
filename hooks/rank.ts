@@ -836,10 +836,17 @@ const FACT_MAX = 100;
 // a pane message can go into a public bug report.
 export const scrubMessage = (text: string, names: readonly string[] = []) => {
   let out = text;
-  for (const name of names) if (name) out = out.split(name).join("<path>");
+  // Longest first, so a name that starts another can't leave the rest behind.
+  const longestFirst = [...names].sort((a, b) => b.length - a.length);
+  for (const name of longestFirst)
+    if (name) out = out.split(name).join("<path>");
+  // Word by word: one regex over the whole text backtracks quadratically on a
+  // long run with no spaces.
   return out
     .replace(/@?"[^"]*"|@?'[^']*'/g, "<path>")
-    .replace(/\S*[\\/@~]\S*|\S*\.[A-Za-z0-9]{1,10}\b\S*/g, "<path>");
+    .replace(/\S+/g, (word) =>
+      /[\\/@~]|\.[A-Za-z0-9]{1,10}\b/.test(word) ? "<path>" : word,
+    );
 };
 
 export type FeedbackFacts = {

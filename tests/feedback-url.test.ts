@@ -156,3 +156,32 @@ test("fitsAfter allows a button only on a footer row already there", async () =>
   expect(fitsAfter(["l: lines", "m: mark"], "t: feedback", 17)).toBe(false);
   expect(fitsAfter(["l: lines", "m: mark"], "t: feedback", 30)).toBe(true);
 });
+
+test("scrubMessage takes out a name that another name starts with", async () => {
+  for (const names of [
+    ["Makefile", "Makefile-acme-merger"],
+    ["Makefile-acme-merger", "Makefile"],
+  ])
+    expect(
+      scrubMessage(
+        "Skipped Makefile (gone), Makefile-acme-merger (gone)",
+        names,
+      ),
+    ).toBe("Skipped <path> (gone), <path> (gone)");
+  expect(
+    scrubMessage("Skipped notes (gone), notes private (gone)", [
+      "notes",
+      "notes private",
+    ]),
+  ).toBe("Skipped <path> (gone), <path> (gone)");
+});
+
+test("scrubMessage and feedbackUrl stay fast on a long run with no spaces", async () => {
+  const long = "x".repeat(300_000);
+  const started = Date.now();
+  expect(scrubMessage(long)).toBe(long);
+  expect(scrubMessage(`${long}.ts`)).toBe("<path>");
+  const url = feedbackUrl("bug", { ...FACTS, message: long });
+  expect(url.length).toBeLessThanOrEqual(LINK_MAX);
+  expect(Date.now() - started).toBeLessThan(2_000);
+});
