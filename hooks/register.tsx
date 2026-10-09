@@ -134,26 +134,28 @@ type Footer = { peek: boolean; hidden: boolean; marks: number };
 // What the line view's footer buttons hang on: a range start brings k and x,
 // kept ranges bring x and i.
 type LineFooter = { anchored: boolean; kept: number };
-// What each surface last drew: the rows of the list and of the file that fit
-// its pane, those rows under another footer (a press that changes a footer
-// label can rewrap it, so the press knows the rows it is about to leave), and
-// the filter it drew the list with (none where it has no box). Both are drawn
-// a window at a time: a pane taller than its tree takes the arrows to scroll,
-// one that fits lets them walk the rows. Kept per surface because a terminal
-// and a phone can draw one session at once.
+// What each surface drawing the pane last drew: the rows of the list and of
+// the file that fit its pane, those rows under another footer (a press that
+// changes a footer label can rewrap it, so the press knows the rows it is
+// about to leave), and whether it drew the filter box (the stored filter
+// applies to its list only then). Both are drawn a window at a time: a pane
+// taller than its tree takes the arrows to scroll, one that fits lets them
+// walk the rows. Kept per surface because a terminal and a phone can draw one
+// session at once; a surface leaves when its client detaches or the pane
+// closes, so nothing here outlives its drawing.
 type Drawn = {
   listRows: number;
   lineRows: number;
   listRowsAfter: (change: Partial<Footer>) => number;
   lineRowsAfter: (footer: LineFooter) => number;
-  listQuery: string;
+  box: boolean;
 };
 const unseen = (): Drawn => ({
   listRows: 10,
   lineRows: 10,
   listRowsAfter: () => 10,
   lineRowsAfter: () => 10,
-  listQuery: "",
+  box: true,
 });
 // Which of two keys the m button and the line view's f button are drawn
 // under. A press that has to put the ring back flips one, so the key the ring
@@ -169,13 +171,13 @@ const drawn = (surface: string) => {
   return view;
 };
 // The view the arrows move in. A focus event doesn't name its surface, but
-// arrows come from a keyboard, so the latest surface with one wins over a
-// phone. ponytail: a terminal and a desktop drawing at once share the latest
-// one's rows; key the slide by surface if the engine ever names it.
+// arrows come from a keyboard, so the latest surface with one (it draws the
+// box) wins over a phone. ponytail: a terminal and a desktop drawing at once
+// share the latest one's rows; key the slide by surface if the engine ever
+// names it.
 const steered = (): Drawn => {
-  const views = [...drawnOn].reverse();
-  const keyed = views.find(([surface]) => surface !== "mobile") ?? views[0];
-  return keyed?.[1] ?? unseen();
+  const views = [...drawnOn.values()].reverse();
+  return views.find((view) => view.box) ?? views[0] ?? unseen();
 };
 // The row the ring is on, so `l` knows which file to open line by line.
 let focusedKey = "";
@@ -872,9 +874,10 @@ async function ringToLine($: EngineInterface, n: number) {
 }
 
 // The keys of the list's rows, in the order drawn: recent files, search hits
-// or the folder's entries, ranked by the filter they were drawn with.
+// or the folder's entries, ranked by the filter the steering surface shows.
 async function listKeys($: EngineInterface) {
-  const query = steered().listQuery;
+  // Read now, not as drawn: the box may have changed it since.
+  const query = steered().box ? await readState($, "query") : "";
   if (await readState($, "recentView")) {
     const recent = await readState($, "recent");
     return recentShown(recent, query).map((hit) => hitKey(hit.path));
@@ -1551,6 +1554,17 @@ export const register: Register = (on) => {
     return { text: "File picker opened." };
   });
 
+  // A surface that stops drawing the pane stops steering it: a client that
+  // leaves takes its rows with it, and a closed pane is drawn nowhere.
+  on("session.detach", (_$, e, next) => {
+    drawnOn.delete(e.surface);
+    return next(e);
+  });
+  on("ui.close", { id: PANE }, (_$, e, next) => {
+    drawnOn.clear();
+    return next(e);
+  }).catch((_$, e, next) => next(e));
+
   on("ui.focus", { requestId: PANE }, async ($, e, next) => {
     if (
       e.origin.kind === "person" &&
@@ -1935,7 +1949,7 @@ export const register: Register = (on) => {
     const showHidden = await readState($, "showHidden");
     // A filter typed on another surface can't be cleared where there is no box.
     const query = Input ? await readState($, "query") : "";
-    view.listQuery = query;
+    view.box = Input !== undefined;
     const marked = await readState($, "marked");
     const markedSet = new Set(marked);
     const hiddenLabelOf = (shown: boolean) =>

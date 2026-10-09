@@ -108,6 +108,10 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Clicking or tapping a `↑/↓ N more` row no longer pages one row too far and
   skips a row: the press now pages from where the window was before the
   focus that the click raised slid it.
+- A surface that left the session (or a closed pane) no longer steers a
+  `↑/↓ N more` tap on the mobile app with the pane size and filter it last
+  drew: the slide follows the surfaces still drawing, and reads the filter as
+  it is now rather than as last drawn.
 - With the terminal or desktop and the mobile app drawing one session at
   once (Remote Control), arrowing onto a `↓ N more` row slides the keyboard
   surface's own filtered list by its own pane size, so `l` and `m` act on

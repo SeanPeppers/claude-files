@@ -436,8 +436,11 @@ mobile app at once, as Remote Control does: each surface pages its own list,
 with its own filter and pane size. A focus event doesn't say which surface
 it came from, so arrowing onto a `↑/↓ N more` row follows the surface with a
 keyboard that drew last; with a terminal and the desktop app open on one
-session, the arrows slide by the size of whichever drew last. None of this
-has been tried in the real apps yet.
+session, the arrows slide by the size of whichever drew last. A surface that
+leaves the session, or a pane that closes, stops steering: the tests page a
+phone past the end of a filtered list the desktop drew, in the folder, in
+search and in line view, both while the desktop draws and after it left.
+None of this has been tried in the real apps yet.
 
 ## Develop
 
