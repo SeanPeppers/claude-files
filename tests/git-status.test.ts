@@ -197,15 +197,22 @@ test("git status runs pinned to the root found, never climbing past it", async (
   const { init } = gitStatusCall("/a/b");
   expect(init).toEqual({
     cwd: "/a/b",
-    env: { GIT_CEILING_DIRECTORIES: "/a" },
+    env: { GIT_ATTR_NOSYSTEM: "1", GIT_CEILING_DIRECTORIES: "/a" },
   });
   expect(gitStatusCall("C:\\x\\y").init.env).toEqual({
+    GIT_ATTR_NOSYSTEM: "1",
     GIT_CEILING_DIRECTORIES: "C:\\x",
   });
   // A filesystem root has nothing above it to fence off.
-  expect(gitStatusCall("/").init).toEqual({ cwd: "/" });
+  expect(gitStatusCall("/").init).toEqual({
+    cwd: "/",
+    env: { GIT_ATTR_NOSYSTEM: "1" },
+  });
   // A parent holding the list separator would be split into wrong ceilings.
-  expect(gitStatusCall("/a:b/c").init).toEqual({ cwd: "/a:b/c" });
+  expect(gitStatusCall("/a:b/c").init).toEqual({
+    cwd: "/a:b/c",
+    env: { GIT_ATTR_NOSYSTEM: "1" },
+  });
 });
 
 test("git failing: too old, SHA-256, or its own first stderr line", async () => {
@@ -292,7 +299,7 @@ test("the argv keeps an odd repository root as one argument, never split", async
   ])
     expect(argv.indexOf(flag)).toBeLessThan(status);
   // A Windows drive root has nothing above it to fence off.
-  expect(gitStatusCall("C:\\").init).toEqual({ cwd: "C:\\" });
+  expect(gitStatusCall("C:\\").init.env).toEqual({ GIT_ATTR_NOSYSTEM: "1" });
   expect(ancestorsOf("C:\\a\\b")).toEqual(["C:\\a\\b", "C:\\a", "C:\\"]);
 });
 
@@ -328,9 +335,13 @@ test("a UNC share or a trailing slash still gives one ceiling above the root", a
   ]);
   expect(gitStatusCall("\\\\srv\\share\\repo").init).toEqual({
     cwd: "\\\\srv\\share\\repo",
-    env: { GIT_CEILING_DIRECTORIES: "\\\\srv\\share\\" },
+    env: {
+      GIT_ATTR_NOSYSTEM: "1",
+      GIT_CEILING_DIRECTORIES: "\\\\srv\\share\\",
+    },
   });
   expect(gitStatusCall("/a/b/").init.env).toEqual({
+    GIT_ATTR_NOSYSTEM: "1",
     GIT_CEILING_DIRECTORIES: "/a",
   });
 });

@@ -581,12 +581,11 @@ export const gitFailNote = (exitCode: number, stderr: string) => {
 // The one command the plugin runs, from the repository `root` found by its
 // `.git`. Optional locks off, so status doesn't write the index. Nothing a
 // repository's files or config set up may start a program: fsmonitor off;
-// attributes read from the empty tree and no global attributes file, so no
-// `.gitattributes` can hand a file to a clean or process filter; lazy fetch
-// off, so a partial clone's promisor remote (and its ssh command) is never
-// reached; submodules ignored, so git starts no other git. Not covered:
-// `$GIT_DIR/info/attributes`, which no flag skips, and the system
-// attributes file. The engine turns repository hooks off for every git it
+// attributes read from the empty tree and no global or system attributes
+// file, so no `.gitattributes` can hand a file to a clean or process filter;
+// lazy fetch off, so a partial clone's promisor remote (and its ssh command)
+// is never reached; submodules ignored, so git starts no other git. Not
+// covered: `$GIT_DIR/info/attributes`, which nothing skips. The engine turns repository hooks off for every git it
 // runs. Porcelain paths are relative to git's work tree, so `--work-tree`
 // pins it to `root` whatever GIT_DIR, GIT_WORK_TREE or core.worktree say,
 // and the ceiling stops git from climbing past a `.git` it finds invalid into
@@ -615,9 +614,10 @@ export const gitStatusCall = (root: string) => {
   ];
   const ceiling = isRoot(root) ? "" : parentOf(root);
   const listSep = isWindowsPath(root) ? ";" : ":";
-  return ceiling && !ceiling.includes(listSep)
-    ? { argv, init: { cwd: root, env: { GIT_CEILING_DIRECTORIES: ceiling } } }
-    : { argv, init: { cwd: root } };
+  const env: Record<string, string> = { GIT_ATTR_NOSYSTEM: "1" };
+  if (ceiling && !ceiling.includes(listSep))
+    env.GIT_CEILING_DIRECTORIES = ceiling;
+  return { argv, init: { cwd: root, env } };
 };
 
 // The files `git status --porcelain=v1 -z` names, as hits under the

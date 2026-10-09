@@ -20,9 +20,9 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `git status --porcelain=v1 -z`, pinned to the repository root with
   `--work-tree` and `GIT_CEILING_DIRECTORIES`, and no other. Its flags turn
   off optional locks, lazy fetch, fsmonitor, the untracked cache and
-  submodules, and read attributes from the empty tree with no global
-  attributes file, so a repository's `.gitattributes` can't make git run a
-  clean or process filter. It needs git 2.45 or newer. The README's Safety
+  submodules, and read attributes from the empty tree with no global or
+  system attributes file, so a repository's `.gitattributes` can't make git
+  run a clean or process filter. It needs git 2.45 or newer. The README's Safety
   section names the command in full and says what git can still run.
   Outside a repository, or when git is missing, too old or fails, the pane
   says why.

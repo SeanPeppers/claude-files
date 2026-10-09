@@ -206,14 +206,15 @@ git --no-optional-locks --no-lazy-fetch --attr-source=4b825dc642cb6eb9a060e54bf8
 with `GIT_CEILING_DIRECTORIES` set to the folder above the repository root, so
 the paths git prints always belong to the root the plugin found: a broken
 `.git` there makes git fail (and the pane say so) instead of reporting an
-outer repository's paths. That variable is only set for git, never read.
+outer repository's paths, and `GIT_ATTR_NOSYSTEM=1`, so git skips the system
+attributes file. Both variables are only set for git, never read.
 
 The flags keep git from writing or starting anything a repository sets up:
 
 - `--no-optional-locks`: git doesn't write its index file.
-- `--attr-source=<empty tree>` and `core.attributesFile=` (empty): git reads
-  no `.gitattributes` from the working tree, index or `attr.tree`, and no
-  global attributes file, so no file is handed to a clean or process filter
+- `--attr-source=<empty tree>`, `core.attributesFile=` (empty) and
+  `GIT_ATTR_NOSYSTEM=1`: git reads no `.gitattributes` from the working tree,
+  index or `attr.tree`, and no global or system attributes file, so no file is handed to a clean or process filter
   (such as Git LFS, `filter.lfs.process`) or other conversion. A file that
   needs one (line endings, Git LFS) may show as `M` when its timestamps
   changed but its content didn't.
@@ -226,12 +227,12 @@ The flags keep git from writing or starting anything a repository sets up:
 
 Claude Code also turns repository hooks off for every git it runs.
 
-What is still possible: git has no flag that skips `$GIT_DIR/info/attributes`
-(the main repository's, for a linked worktree) or the system attributes file.
-If one of those assigns a filter, and your repository, global or system git
-config defines that filter's command, `git status` runs it, and it can do
-whatever that program does. Cloning writes neither file nor any filter command
-into `.git`, so this takes someone who already wrote into your `.git` (or a
+What is still possible: git has no flag or variable that skips
+`$GIT_DIR/info/attributes` (the main repository's, for a linked worktree). If
+it assigns a filter, and your repository, global or system git config defines
+that filter's command, `git status` runs it, and it can do whatever that
+program does. Cloning writes neither that file nor any filter command into
+`.git`, so this takes someone who already wrote into your `.git` (or a
 `.git` you copied from someone else, such as from an archive) or your own
 git config. Press `g` only where you'd run `git status` yourself.
 
@@ -293,7 +294,7 @@ changes what Claude or its tools do; they only add the pane.
 
 Engine calls it makes: `$.command.register` (the `/files` command),
 `$.fs.list` and `$.fs.stat` (folder listings and file types; project search is `$.fs.list` alone, one folder per call; `g` also stats `.git` in the working directory and each folder above it to find the repository root),
-`$.process.run` (only the one `git status` command above, only when you press `g`; its flags keep `.gitattributes` from starting filters, and Safety says what git can still run),
+`$.process.run` (only the one `git status` command above, only when you press `g`; its flags and `GIT_ATTR_NOSYSTEM` keep `.gitattributes` and the global and system attributes files from starting filters; `.git/info/attributes` still can, as Safety explains),
 `$.fs.read` (the file you press `l` on, up to 4 MiB, and with the preview on,
 the highlighted file, up to 64 KiB), `$.clock.after` (waits 120 ms for the
 arrows to rest before the preview reads),
