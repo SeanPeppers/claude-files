@@ -359,6 +359,14 @@ export const wrappedRows = (
   return rows;
 };
 
+// Whether `label` fits after `labels` without wrapping the footer onto
+// another row: a button that only shows where it costs the list nothing.
+export const fitsAfter = (
+  labels: readonly string[],
+  label: string,
+  width: number,
+) => wrappedRows([...labels, label], width) === wrappedRows(labels, width);
+
 // One preview row: tabs as two spaces, unsafe characters as �, cut to width.
 export const previewLine = (text: string, width: number) =>
   fitCells(displayName(text.replace(/\t/g, "  ").replace(/\r$/, "")), width);
@@ -812,3 +820,72 @@ export const ringAfterToggle = (
   key === "filter" || key === PARENT_KEY || (before !== "" && before === after)
     ? ""
     : pressed;
+
+// The plugin's version, as .claude-plugin/plugin.json spells it: the module
+// can't read its manifest, so a test keeps the two in step.
+export const PLUGIN_VERSION = "0.4.3";
+export const FEEDBACK_ISSUES =
+  "https://github.com/SeanPeppers/claude-files/issues/new";
+// What a Link takes in all, percent-encoded.
+export const LINK_MAX = 2048;
+// A version or a size longer than this is no version or size.
+const FACT_MAX = 100;
+
+// `text` with every name in `names` and anything that looks like a path (a
+// separator, an @mention, a quoted name, a file extension) put as <path>, so
+// a pane message can go into a public bug report.
+export const scrubMessage = (text: string, names: readonly string[] = []) => {
+  let out = text;
+  for (const name of names) if (name) out = out.split(name).join("<path>");
+  return out
+    .replace(/@?"[^"]*"|@?'[^']*'/g, "<path>")
+    .replace(/\S*[\\/@~]\S*|\S*\.[A-Za-z0-9]{1,10}\b\S*/g, "<path>");
+};
+
+export type FeedbackFacts = {
+  claude: string;
+  surface: string;
+  pane: string;
+  view: string;
+  message: string;
+};
+
+const issueUrl = (fields: Record<string, string>) =>
+  `${FEEDBACK_ISSUES}?${Object.entries(fields)
+    .map(
+      ([key, value]) =>
+        `${key}=${encodeURIComponent(value.replace(/\p{Cs}/gu, "\uFFFD"))}`,
+    )
+    .join("&")}`;
+
+// The GitHub issue form for a bug or an idea, its fields filled from `facts`.
+// The last message is scrubbed of paths and cut to keep the URL a Link takes.
+export const feedbackUrl = (kind: "bug" | "idea", facts: FeedbackFacts) => {
+  const versions = {
+    "plugin-version": PLUGIN_VERSION,
+    "claude-version": facts.claude.slice(0, FACT_MAX),
+  };
+  if (kind === "idea")
+    return issueUrl({ template: "feature.yml", title: "Idea: ", ...versions });
+  const fields = {
+    template: "bug.yml",
+    title: "Bug: ",
+    ...versions,
+    surface: facts.surface.slice(0, FACT_MAX),
+    "pane-size": facts.pane.slice(0, FACT_MAX),
+    view: facts.view.slice(0, FACT_MAX),
+  };
+  const message = [...scrubMessage(facts.message)];
+  if (message.length === 0) return issueUrl(fields);
+  let keep = message.length;
+  for (;;) {
+    const cut = keep < message.length;
+    const url = issueUrl({
+      ...fields,
+      "last-message": `${message.slice(0, keep).join("")}${cut ? "…" : ""}`,
+    });
+    if (url.length <= LINK_MAX || keep === 0) return url;
+    // A code point takes at most 12 characters percent-encoded.
+    keep = Math.max(0, keep - Math.ceil((url.length - LINK_MAX) / 12));
+  }
+};
