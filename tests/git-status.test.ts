@@ -406,3 +406,24 @@ test("the attribute source is git's SHA-1 empty tree and no -c value names a pro
     gitFailNote(129, "unknown option: --attr-source=4b825dc6\nusage: git\n"),
   ).toBe("git 2.45 or newer is needed to keep repository filters from running");
 });
+
+test("parse: a POSIX name holding a backslash, a leading dash or space stays literal", async () => {
+  const hits = parseGitStatus(
+    "/r",
+    "?? a\\b.ts\0?? -rf\0??  lead.ts\0 M d/--help\0",
+    false,
+  ).hits;
+  expect(hits.map((hit) => [hit.path, hit.name])).toEqual([
+    ["/r/a\\b.ts", "a\\b.ts"],
+    ["/r/-rf", "-rf"],
+    ["/r/ lead.ts", " lead.ts"],
+    ["/r/d/--help", "--help"],
+  ]);
+});
+
+test("ancestors of a path with a trailing separator still end at the root", async () => {
+  const up = ancestorsOf("/a/b/");
+  expect(up.at(-1)).toBe("/");
+  expect(up).toContain("/a");
+  expect(ancestorsOf("C:\\a\\").at(-1)).toBe("C:\\");
+});

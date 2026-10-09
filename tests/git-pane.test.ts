@@ -733,3 +733,48 @@ test("a repository folder named like a git flag still runs one fixed argv", asyn
   expect(log.runs[0]?.argv.filter((arg) => arg === "-c")).toHaveLength(3);
   await ui.unmount();
 });
+
+test("a failure note stays while typing a filter, with no 'no match' line under it", async ($, on) => {
+  wire(on, { exitCode: 128, stderr: "fatal: index file corrupt\n" });
+  const ui = await mount($);
+  await ui.press({ key: "changes" });
+  const note = { text: "git status failed: fatal: index file corrupt" };
+  expect(await until(ui, note)).toBe(true);
+  await ui.input({ key: "filter", text: "a", kind: "change" });
+  expect(await until(ui, note)).toBe(true);
+  expect(await ui.find({ text: /no match/ })).toBeUndefined();
+  expect(await ui.find({ key: "hit:/p/src/a.ts" })).toBeUndefined();
+  await ui.unmount();
+});
+
+test("git warnings on stderr with exit 0 still list the changes", async ($, on) => {
+  wire(on, {
+    stderr: "warning: could not open directory 'locked/': Permission denied\n",
+  });
+  const ui = await mount($);
+  await ui.press({ key: "changes" });
+  expect(await until(ui, { key: "hit:/p/src/a.ts" })).toBe(true);
+  expect(await ui.find({ text: /Permission denied/ })).toBeUndefined();
+  await ui.unmount();
+});
+
+test("from inside the .git folder itself, the repository above is the root", async ($, on) => {
+  const log = wire(on, { cwd: "/p/.git/hooks", dirs: ["/p/.git/hooks"] });
+  const ui = await mount($);
+  await ui.press({ key: "changes" });
+  expect(await until(ui, { key: "hit:/p/src/a.ts" })).toBe(true);
+  expect(log.runs).toHaveLength(1);
+  expect(log.runs[0]?.cwd).toBe("/p");
+  expect(log.runs[0]?.ceiling).toBe("/");
+  await ui.unmount();
+});
+
+test("the recent view offers no g; the folder list does", async ($, on) => {
+  wire(on);
+  const ui = await mount($);
+  expect(await until(ui, { key: "changes" })).toBe(true);
+  await ui.press({ key: "recent" });
+  expect(await until(ui, { text: /recent in/ })).toBe(true);
+  expect(await ui.find({ key: "changes" })).toBeUndefined();
+  await ui.unmount();
+});
