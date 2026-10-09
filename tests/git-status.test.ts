@@ -305,3 +305,32 @@ test("git failing: an unknown subcommand option from a very old git is a refusal
     "git status failed: fatal: unknown option in config",
   );
 });
+
+test("parse: records with no path or no space after the status are skipped", async () => {
+  expect(rels("M\0?? \0??x\0 M ok.ts\0")).toEqual(["M ok.ts"]);
+  // A rename whose old path never arrived still lists its new name.
+  expect(rels("R  new.ts\0")).toEqual(["R new.ts"]);
+  // Empty output: no rows, not cut, not capped.
+  const none = parseGitStatus("/r", "", false);
+  expect(none).toEqual({
+    hits: [],
+    capped: false,
+    deep: false,
+    foldersCapped: false,
+  });
+});
+
+test("a UNC share or a trailing slash still gives one ceiling above the root", async () => {
+  expect(ancestorsOf("\\\\srv\\share\\repo\\sub")).toEqual([
+    "\\\\srv\\share\\repo\\sub",
+    "\\\\srv\\share\\repo",
+    "\\\\srv\\share\\",
+  ]);
+  expect(gitStatusCall("\\\\srv\\share\\repo").init).toEqual({
+    cwd: "\\\\srv\\share\\repo",
+    env: { GIT_CEILING_DIRECTORIES: "\\\\srv\\share\\" },
+  });
+  expect(gitStatusCall("/a/b/").init.env).toEqual({
+    GIT_CEILING_DIRECTORIES: "/a",
+  });
+});

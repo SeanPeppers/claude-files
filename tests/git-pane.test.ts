@@ -661,3 +661,43 @@ test("an empty, truncated git output says it was cut and lists nothing", async (
   expect(await ui.find({ key: "hit:/p/half-a-na" })).toBeUndefined();
   await ui.unmount();
 });
+
+test("closing the pane while git runs drops the late answer; g again lists afresh", async ($, on) => {
+  let calls = 0;
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const log = wire(on, {
+    stdout: () => (calls === 0 ? "?? stale.ts\0" : "?? fresh.ts\0"),
+    hold: () => (calls++ === 0 ? held : Promise.resolve()),
+  });
+  const first = await mount($);
+  await first.press({ key: "changes" });
+  for (let i = 0; i < 50 && log.runs.length === 0; i++) await first.drawn();
+  await first.unmount();
+  release();
+  const ui = await mount($);
+  await $.command.run({ command: "files" } as any);
+  expect(await until(ui, { key: "row:x.ts" })).toBe(true);
+  expect(await ui.find({ key: "hit:/p/stale.ts" })).toBeUndefined();
+  await ui.press({ key: "changes" });
+  expect(await until(ui, { key: "hit:/p/fresh.ts" })).toBe(true);
+  expect(await ui.find({ key: "hit:/p/stale.ts" })).toBeUndefined();
+  expect(log.runs).toHaveLength(2);
+  await ui.unmount();
+});
+
+test("the filter matches file names, never git's status letters", async ($, on) => {
+  wire(on, { stdout: "?? new.ts\0 M mod.ts\0" });
+  const ui = await mount($);
+  await ui.press({ key: "changes" });
+  expect(await until(ui, { key: "hit:/p/new.ts" })).toBe(true);
+  await ui.input({ key: "filter", text: "??", kind: "change" });
+  expect(await until(ui, { text: 'no match for "??"' })).toBe(true);
+  expect(await ui.find({ key: "hit:/p/new.ts" })).toBeUndefined();
+  await ui.input({ key: "filter", text: "mod", kind: "change" });
+  expect(await until(ui, { key: "hit:/p/mod.ts" })).toBe(true);
+  expect(await ui.find({ key: "hit:/p/new.ts" })).toBeUndefined();
+  await ui.unmount();
+});
