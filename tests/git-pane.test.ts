@@ -1,4 +1,4 @@
-import { expect, test } from "claude-code/testing";
+import { expect, mock, test } from "claude-code/testing";
 
 import { gitStatusCall } from "../hooks/rank";
 import { posix } from "./posix";
@@ -702,5 +702,34 @@ test("the filter matches file names, never git's status letters", async ($, on) 
   await ui.input({ key: "filter", text: "mod", kind: "change" });
   expect(await until(ui, { key: "hit:/p/mod.ts" })).toBe(true);
   expect(await ui.find({ key: "hit:/p/new.ts" })).toBeUndefined();
+  await ui.unmount();
+});
+
+test("the preview reads a changed file above the working directory, never a secrets one", async ($, on) => {
+  const clock = mock.clock(on);
+  wire(on, { cwd: "/p/src", stdout: " M b c.md\0?? .env\0" });
+  const ui = await mount($);
+  await ui.press({ key: "changes" });
+  expect(await until(ui, { key: "hit:/p/b c.md" })).toBe(true);
+  await ui.press({ key: "peek" });
+  await focus($, "hit:/p/b c.md");
+  await clock.advance(200);
+  expect(await until(ui, { text: /^one$/ })).toBe(true);
+  await focus($, "hit:/p/.env");
+  await clock.advance(200);
+  expect(await until(ui, { text: /secrets file: not previewed/ })).toBe(true);
+  expect(await ui.find({ text: /^one$/ })).toBeUndefined();
+  await ui.unmount();
+});
+
+test("a repository folder named like a git flag still runs one fixed argv", async ($, on) => {
+  const log = wire(on, { cwd: "/-c", gitAt: "/-c/.git", dirs: ["/-c"] });
+  const ui = await mount($);
+  await ui.press({ key: "changes" });
+  expect(await until(ui, { text: /changes/ })).toBe(true);
+  for (let i = 0; i < 50 && log.runs.length === 0; i++) await ui.find({});
+  expect(log.runs).toHaveLength(1);
+  expect(log.runs[0]?.argv).toEqual(gitStatusCall("/-c").argv);
+  expect(log.runs[0]?.argv.filter((arg) => arg === "-c")).toHaveLength(3);
   await ui.unmount();
 });

@@ -345,3 +345,64 @@ test("a UNC share or a trailing slash still gives one ceiling above the root", a
     GIT_CEILING_DIRECTORIES: "/a",
   });
 });
+
+// Captured from git 2.51 running the plugin's argv in a repository holding a
+// merge conflict, a deletion, an intent-to-add file, a staged rename with
+// spaces, a hidden untracked folder, a name with a newline, a quote, and a
+// nested repository.
+test("parse: real git 2.51 output from a messy repository", async () => {
+  const out =
+    'UU conflict.ts\0 D gone.ts\0 A ita.ts\0 M keep.ts\0R  new name.ts\0old name.ts\0?? .hidden/h.md\0?? line\nbreak.txt\0?? nested/\0?? quo"te.md\0';
+  const walk = parseGitStatus("/repo", out, false);
+  expect(
+    walk.hits.map((hit) => `${hit.status}|${hit.rel}|${hit.name}`),
+  ).toEqual([
+    "UU|conflict.ts|conflict.ts",
+    "A|ita.ts|ita.ts",
+    "M|keep.ts|keep.ts",
+    "R|new name.ts|new name.ts",
+    "??|.hidden/h.md|h.md",
+    "??|line\nbreak.txt|line\nbreak.txt",
+    '??|quo"te.md|quo"te.md',
+  ]);
+  expect(walk.hits.every((hit) => hit.path === `/repo/${hit.rel}`)).toBe(true);
+  expect(walk.capped).toBe(false);
+  expect(walk.cut).toBeUndefined();
+});
+
+test("parse: a copy skips its source, and an old path shaped like a record is never listed", async () => {
+  expect(rels("C  copy.ts\0src.ts\0R  b.ts\0?? evil.ts\0 M real.ts\0")).toEqual(
+    ["C copy.ts", "R b.ts", "M real.ts"],
+  );
+});
+
+test("parse: a huge clean-looking output of 100,000 records stays linear and capped", async () => {
+  const out = " M f.ts\0".repeat(100_000);
+  const started = Date.now();
+  const walk = parseGitStatus("/r", out, false);
+  expect(Date.now() - started).toBeLessThan(2_000);
+  expect(walk.hits).toHaveLength(20_000);
+  expect(walk.capped).toBe(true);
+});
+
+test("the attribute source is git's SHA-1 empty tree and no -c value names a program", async () => {
+  const { argv, init } = gitStatusCall("/r");
+  const configs = argv.filter((_, i) => argv[i - 1] === "-c");
+  expect(configs).toEqual([
+    "core.attributesFile=",
+    "core.fsmonitor=false",
+    "core.untrackedCache=false",
+  ]);
+  expect(argv.filter((arg) => arg.startsWith("--attr-source="))).toEqual([
+    "--attr-source=4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+  ]);
+  // Only the two variables git needs: nothing that could name a program.
+  expect(Object.keys(init.env).sort()).toEqual([
+    "GIT_ATTR_NOSYSTEM",
+    "GIT_CEILING_DIRECTORIES",
+  ]);
+  // Older gits refuse the global flags with exit 129 before running status.
+  expect(
+    gitFailNote(129, "unknown option: --attr-source=4b825dc6\nusage: git\n"),
+  ).toBe("git 2.45 or newer is needed to keep repository filters from running");
+});
