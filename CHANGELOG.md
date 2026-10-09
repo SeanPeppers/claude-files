@@ -19,7 +19,18 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   files are never previewed (even after a yes), nor binary files, links that
   lead out of the project or files over 64 KiB; each gets a one-line notice
   instead. The preview shows only in a pane of at least 20 rows and 40
-  columns.
+  columns. When turning it on or off moves the highlighted row, the
+  highlight goes to the `p` button, so a second `p` turns it off again.
+- Several ranges from one file: in the line view, `k` keeps the range being
+  picked so another can be picked after it. Enter on the last line of the
+  final range, or `i`, puts them all in as separate mentions
+  (`@src/a.ts#L10-20 @src/a.ts#L80-95`), in line order, with overlapping or
+  touching ranges merged. Kept lines show `✓` in the gutter and are listed in
+  the status line; `x` clears them along with the start. The `keep range`
+  and `insert` buttons, reached with Tab, the arrows or a click, take the
+  range on screen just as the keys do, and clicking a line starts a range
+  there wherever the ring was. When those buttons wrap the footer, the view
+  scrolls to keep the highlighted line in view and the highlight stays on it.
 - `g` lists the files git sees as changed or untracked, with their status
   (`M`, `A`, `R`, `??`, `UU`), filtered and picked like project search
   results: Enter, `l` and `m` work on them. It runs two read-only git
@@ -42,6 +53,28 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Back from the line view (`f`), `m` and `l` work on the file the ring is on
   again instead of asking you to arrow onto a file first.
+- In a pane under 39 columns the line view's footer (`files`, `whole file`,
+  `clear start`) wraps, and the rows it took were not counted, so the lines
+  ran past the pane and the arrows scrolled it instead of moving.
+  Counting them, starting a range there brought the `clear start` button,
+  whose wrap took a line from the view: the line just pressed dropped out of
+  it and the highlight landed on "more". The line view now scrolls to keep
+  the highlighted line in view when a range is started, ended or cleared,
+  and the highlight stays on it.
+- After `h` the highlight stayed at the same place on the screen while the
+  rows moved under it, so it sat on another row while `l` and `m` answered
+  "Arrow onto a file first". When `h` moves the highlighted row (its longer
+  label wrapping the footer can push the row out of view), the highlight
+  now goes to the `h` button, so a second `h` undoes it; when the
+  row stays put, it stays on it and `l` and `m` act on it. A highlight on a
+  footer or "more" button goes to the `h` button too, where before it slid
+  onto whatever took its place on the screen while `l`, `m` and Enter still
+  acted on the button it had been on.
+- When `m` brought or grew the `insert` button and that wrapped the footer
+  onto another row, the row just marked could drop out of view, with the
+  highlight landing on "more" while a second `m` unmarked the hidden row.
+  The list now scrolls to keep the highlighted row in view after `m` or `i`,
+  and the highlight stays on it.
 
 ## [0.4.3] - 2026-10-07
 

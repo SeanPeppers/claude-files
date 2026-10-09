@@ -20,7 +20,7 @@ or press `l` and pick just the lines you care about: `@src/app.ts#L40-72`.
  42 │   if (!user) return unauthorized();
  ↓ 38 more
 
- f: files  w: whole file  x: clear start
+ f: files  w: whole file  k: keep range  x: clear start
 
 ❯ @src/app.ts#L40-72
 ```
@@ -91,6 +91,9 @@ To update later: `claude plugin update file-picker@claude-files`.
   and again on line 145, then ask "simplify this loop". The prompt gets
   `@src/report.py#L120-145`, so Claude reads those 26 lines rather than the
   whole file.
+- **Several pieces of one file.** In the line view, press Enter on line 10,
+  arrow to line 20 and press `k` to keep that range; then Enter on 80 and on
+  95. Both go in together: `@src/a.ts#L10-20 @src/a.ts#L80-95`.
 - **Gather files from across the project.** Press `s` to search the whole
   project, press `m` on `api.ts`, `api.test.ts` and `docs/api.md`, then `i`,
   and ask "make the docs match the code". All three mentions go in at once.
@@ -173,10 +176,12 @@ the folder list to see changes made since.
 |---|---|
 | `↑` `↓` | move through the lines; long files slide as you go |
 | `Enter` on a line | first press marks the start, second the end: `@file#L12-30` goes in. Enter twice on one line gives `#L12` |
-| `↑` `↓` after a start | the lines from the start (`▸`) to the one you're on are highlighted (`┃`), and the status line reads `Lines 12–30 (19 lines): Enter to add, x to clear` |
+| `↑` `↓` after a start | the lines from the start (`▸`) to the one you're on are highlighted (`┃`), and the status line reads `Lines 12–30 (19 lines): Enter to add, k to keep, x to clear` |
+| `k` after a start | keep that range and pick another of the same file: kept lines show `✓` and the status line lists them (`Kept L10–20, L80–95`). Overlapping or touching ranges merge into one. The `keep range` and `insert` buttons, tabbed to or clicked, take the same range as the keys: it ends on the last line the ring was on |
+| `Enter` on the last line, or `i` | with ranges kept, put them all in at once, in line order, as separate mentions: `@src/a.ts#L10-20 @src/a.ts#L80-95`. `i` (there once a range is kept) takes a range you're still picking along too |
 | find box | type text and press Enter to jump to the next line containing it |
 | `w` | put the whole file in instead |
-| `x` | clear the start you marked |
+| `x` | clear the start you marked and any kept ranges |
 | `f` | back to the folder |
 
 **In and out in one key.** Open a folder and the focus sits on `../`, so Enter
@@ -191,7 +196,16 @@ always `/`, which Windows accepts too.
 
 **Focus.** The letter keys work while the pane has the keyboard. After a file
 is added the keyboard goes back to the prompt so you can keep typing; click the
-pane or press `ctrl+x` then `Tab` to return.
+pane or press `ctrl+x` then `Tab` to return. When `h` or `p` moves the
+highlight (hidden files appear above it, the preview or the button's longer
+label wrapping the footer pushes its row out of view, or the list under a
+footer button grows or shrinks), the highlight goes
+to the button pressed, so pressing it again undoes it. When `m` or `i` brings,
+grows or takes away the `insert` button and that rewraps the footer, the list
+scrolls to keep the highlighted row in view and the highlight stays on it.
+The line view does the same for the line you start, end, keep, insert or
+clear a range from when `keep range`, `clear` or `insert` rewraps its
+footer.
 
 The folder is listed when you open it; reopen `/files` to see files added since.
 
@@ -211,7 +225,9 @@ with the preview on, when the arrows rest on it** (to draw its first lines under
 the list), and inserts text into your prompt. The preview is off until you press
 `p`; it reads only files up to 64 KiB, and never reads a secrets file (below,
 even one you said yes to) or a link that leads out of the project. What it shows
-stays on your screen: nothing it reads goes into the prompt. When you press `g`
+stays on your screen: nothing it reads goes into the prompt. What it
+remembers for the session (the folder, the filter, the marked files, the kept
+line ranges) is the pane's own state, never file contents. When you press `g`
 it runs two read-only git commands, in the repository root, with no shell.
 First it asks git which git folder it uses:
 
@@ -324,7 +340,7 @@ changes what Claude or its tools do; they only add the pane.
 |---|---|
 | `session.start` | registers the `/files` command |
 | `command.run` (`/files` only) | opens the Files pane with an empty filter. It is matched to the `/files` command, so it never sees or changes any other command |
-| `ui.render` (the Files pane) | draws the folder list, the project search, the recent files, the git changes list, the line view or the secrets confirmation |
+| `ui.render` (the Files pane) | draws the folder list, the project search, the recent files, the git changes list, the line view (with any kept ranges) or the secrets confirmation |
 | `ui.focus` (the Files pane) | remembers the highlighted row for `l`, `m` and the preview, and when the arrows reach a `↑/↓ N more` row, slides the list one row. With the preview on, it starts a short timer whose end reads the highlighted file |
 
 Engine calls it makes: `$.command.register` (the `/files` command),
@@ -337,8 +353,8 @@ arrows to rest before the preview reads),
 toasts), `$.store` (the recent files, kept between sessions: read when
 you press `r` or add a file, written when you add a file or one has gone) and `$.state` (the pane's own session state: folder, filter, scroll
 position, search, recent or changes mode, the open file, the range start,
-the marked files, the recent files as last checked and whether the preview
-is on). It
+the kept line ranges, the marked files, the recent files as last checked and
+whether the preview is on). It
 reads no environment variables, tokens or Claude Code settings, and it makes
 no network requests (`git status` runs with lazy fetch off, so it reads only local files): `claude plugin validate` shows no `env reads:` line and no
 network calls. The list of secrets file names under [Safety](#safety) is used

@@ -1,6 +1,6 @@
-import { expect, mock, test } from "claude-code/testing";
-
+import { expect, mock } from "claude-code/testing";
 import { gitStatusCall } from "../hooks/rank";
+import { test } from "./kit";
 import { posix } from "./posix";
 
 // The `g` changes view in the pane, with `git status` answered by a

@@ -1,5 +1,4 @@
-import { expect, mock, test } from "claude-code/testing";
-
+import { expect, mock } from "claude-code/testing";
 import {
   keepRecent,
   RECENT_MAX,
@@ -9,6 +8,7 @@ import {
   recentShown,
   withRecent,
 } from "../hooks/rank";
+import { test } from "./kit";
 import { posix } from "./posix";
 
 test("recentByDir keeps only well-formed lists from the store", async () => {

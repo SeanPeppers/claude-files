@@ -1,6 +1,6 @@
-import { expect, test } from "claude-code/testing";
-
+import { expect } from "claude-code/testing";
 import { RECENT_MAX, recentHit, withRecent } from "../hooks/rank";
+import { test } from "./kit";
 import { posix } from "./posix";
 
 // Edge cases for the recent files list (`r`) beyond recent.test.ts: what does

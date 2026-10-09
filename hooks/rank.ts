@@ -110,6 +110,37 @@ export const mentionFor = (path: string, cwd: string, range?: LineRange) => {
     : `@${slashed}${fragment} `;
 };
 
+// One mention per range, in the order given, or undefined when the path can't
+// be mentioned safely; no ranges is the whole file.
+export const mentionsFor = (
+  path: string,
+  cwd: string,
+  ranges: readonly LineRange[] = [],
+) => {
+  if (ranges.length === 0) return mentionFor(path, cwd);
+  const mentions = ranges.map((range) => mentionFor(path, cwd, range));
+  return mentions.every(Boolean) ? mentions.join("") : undefined;
+};
+
+// Sorted by start, with overlapping or touching ranges joined: 3–5 and 6–9
+// are one range, 3–9, so no line is mentioned twice.
+export const mergeRanges = (ranges: readonly LineRange[]) => {
+  const merged: LineRange[] = [];
+  for (const range of [...ranges].sort((a, b) => a.start - b.start)) {
+    const last = merged.at(-1);
+    if (last && range.start <= last.end + 1)
+      last.end = Math.max(last.end, range.end);
+    else merged.push({ start: range.start, end: range.end });
+  }
+  return merged;
+};
+
+// Ranges as the status line lists them: `L3–9, L12`.
+export const rangesLabel = (ranges: readonly LineRange[]) =>
+  ranges
+    .map(({ start, end }) => (start === end ? `L${start}` : `L${start}–${end}`))
+    .join(", ");
+
 // Lower is better; undefined means no match. Prefix beats substring beats
 // subsequence. NFC on both sides: macOS often stores names decomposed.
 export const fuzzyScore = (name: string, query: string): number | undefined => {
@@ -599,7 +630,7 @@ export const recentShown = (hits: readonly Hit[], query: string) =>
 // Browsing preview: files over PEEK_MAX_BYTES aren't read at all, since
 // `$.fs.read` has no limit short of the whole file.
 export const PEEK_MAX_BYTES = 64 * 1024;
-const PEEK_MAX_LINES = 10;
+export const PEEK_MAX_LINES = 10;
 const PEEK_MIN_LINES = 3;
 // The preview's file name line and the blank row above it.
 export const PEEK_CHROME_ROWS = 2;
@@ -761,3 +792,23 @@ export const parseGitStatus = (
     ? { hits, capped: false, deep: false, foldersCapped: false, cut: true }
     : { hits, capped: false, deep: false, foldersCapped: false };
 };
+
+// The '..' row's key, drawn above the folder's rows.
+export const PARENT_KEY = "row:..";
+
+// Where the focus ring goes once p or h redraws the list: "" leaves it, else
+// it goes to `pressed`, the key the pressed button is drawn under next. The
+// engine keeps the ring at its place in the pane's order, not on its element,
+// so only what sits above the list (the filter, '..') and a row whose place
+// is unchanged (`before` and `after`, index@first row, "" when not drawn) keep
+// theirs. The filter is no place to send it: it would take the next p or h as
+// text.
+export const ringAfterToggle = (
+  key: string,
+  before: string,
+  after: string,
+  pressed: string,
+) =>
+  key === "filter" || key === PARENT_KEY || (before !== "" && before === after)
+    ? ""
+    : pressed;

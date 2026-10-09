@@ -1,5 +1,4 @@
-import { expect, test } from "claude-code/testing";
-
+import { expect } from "claude-code/testing";
 import {
   humanSize,
   mentionFor,
@@ -7,6 +6,7 @@ import {
   resolveTyped,
   windowAround,
 } from "../hooks/rank";
+import { test } from "./kit";
 
 test("mentions paths relative to the working directory and quotes spaces", async () => {
   expect(mentionFor("/home/u/code/a.py", "/home/u/code")).toBe("@a.py ");

@@ -1,6 +1,6 @@
-import { expect, mock, test } from "claude-code/testing";
-
+import { expect, mock } from "claude-code/testing";
 import { heightOf } from "./height";
+import { test } from "./kit";
 import { posix } from "./posix";
 
 // Recent files (r) and the preview (p) together, from an independent tester:

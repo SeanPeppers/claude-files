@@ -1,5 +1,4 @@
-import { expect, test } from "claude-code/testing";
-
+import { expect } from "claude-code/testing";
 import {
   findLine,
   fitCells,
@@ -8,6 +7,7 @@ import {
   mentionFor,
   previewLine,
 } from "../hooks/rank";
+import { test } from "./kit";
 import { posix } from "./posix";
 
 const ROOT = "/p";
@@ -214,7 +214,9 @@ test("the lines between the start and the ring are highlighted", async ($, on) =
   expect(await ui.find({ text: /^ 2 │ / })).toBeDefined();
   expect(await ui.find({ text: /^ 7 │ / })).toBeDefined();
   expect(
-    await ui.find({ text: "Lines 3–6 (4 lines): Enter to add, x to clear" }),
+    await ui.find({
+      text: "Lines 3–6 (4 lines): Enter to add, k to keep, x to clear",
+    }),
   ).toBeDefined();
 
   // Upward from the start works the same.
@@ -223,7 +225,7 @@ test("the lines between the start and the ring are highlighted", async ($, on) =
   expect(await ui.find({ text: /^ 4 │ / })).toBeDefined();
   expect(await ui.find({ text: /^Lines 1–3 \(3 lines\)/ })).toBeDefined();
 
-  await ui.press({ key: "clear start" });
+  await ui.press({ key: "clear" });
   expect(await ui.find({ text: ranged })).toBeUndefined();
 
   await ui.press({ key: "line:2" });
