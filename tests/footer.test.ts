@@ -1,7 +1,7 @@
-import { expect, mock, test } from "claude-code/testing";
-
+import { expect, mock } from "claude-code/testing";
 import { wrappedRows } from "../hooks/rank";
 import { heightOf } from "./height";
+import { test } from "./kit";
 import { posix } from "./posix";
 
 test("wrappedRows counts the rows a wrapping footer takes", async () => {
@@ -23,17 +23,21 @@ const NAMES = Array.from(
 );
 
 // Wide and narrow docks, and the short inline band (compact layout); below
-// about 9 rows at 40 columns even one list row can't fit.
+// about 10 rows at 40 columns even one list row can't fit.
 // At 39 columns a mark wraps the folder footer to a fourth row, which only
 // the labels counted in the order the buttons draw foresee.
 for (const [COLUMNS, BODY_ROWS] of [
+  [41, 20],
   [40, 20],
+  [39, 20],
+  [30, 20],
   [40, 11],
-  [40, 9],
+  [40, 10],
   [39, 11],
   [90, 11],
 ] as const)
   test(`list, search, recent and lines stay within ${BODY_ROWS} rows at ${COLUMNS} columns`, async ($, on) => {
+    const clock = mock.clock(on);
     mock.store(on, {
       recent: { "/p": NAMES.slice(0, 10).map((name) => `/p/${name}`) },
     });
@@ -88,6 +92,19 @@ for (const [COLUMNS, BODY_ROWS] of [
     expect(await ui.find({ key: "more:above" })).toBeDefined();
     expect(await ui.find({ key: "more:below" })).toBeDefined();
     expect(heightOf(await ui.drawn(), COLUMNS)).toBeLessThanOrEqual(BODY_ROWS);
+
+    // The preview, where it fits, takes its rows from the list, not the pane.
+    // At 40 columns the mark wraps the footer to a fourth row, which leaves
+    // a 20-row pane too little for the preview; at 41 it takes three.
+    await ui.press({ key: "peek" });
+    await focus("row:f02.ts");
+    await clock.advance(200);
+    let previewed = false;
+    for (let i = 0; i < 50 && !previewed; i++)
+      previewed = (await ui.find({ text: /^line 1$/ })) !== undefined;
+    expect(previewed).toBe(COLUMNS >= 41 && BODY_ROWS >= 20);
+    expect(heightOf(await ui.drawn(), COLUMNS)).toBeLessThanOrEqual(BODY_ROWS);
+    await ui.press({ key: "hide-peek" });
 
     await focus("row:f01.ts");
     await ui.press({ key: "lines" });

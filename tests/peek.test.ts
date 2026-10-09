@@ -1,11 +1,11 @@
-import { expect, mock, test } from "claude-code/testing";
-
+import { expect, mock } from "claude-code/testing";
 import {
   headLines,
   PEEK_CHROME_ROWS,
   PEEK_MAX_BYTES,
   peekLines,
 } from "../hooks/rank";
+import { test } from "./kit";
 import { posix } from "./posix";
 
 const ROOT = "/p";
@@ -154,7 +154,7 @@ for (const surface of SURFACES) {
     expect(await ui.find({ text: /^line 1$/ })).toBeUndefined();
     expect(await ui.find({ text: /arrow onto a file/ })).toBeDefined();
 
-    await ui.press({ key: "peek" });
+    await ui.press({ key: "hide-peek" });
     expect(await ui.find({ key: "peek:box" })).toBeUndefined();
     await arrowOnto($, "row:b.ts");
     await clock.advance(200);

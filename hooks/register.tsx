@@ -17,8 +17,10 @@ import {
   joinPath,
   keepRecent,
   mentionFor,
+  PARENT_KEY,
   PEEK_CHROME_ROWS,
   PEEK_MAX_BYTES,
+  PEEK_MAX_LINES,
   parentOf,
   peekLines,
   previewLine,
@@ -32,6 +34,7 @@ import {
   recentShown,
   relativeTo,
   resolveTyped,
+  ringAfterToggle,
   toggleMark,
   WALK_MAX_DEPTH,
   WALK_MAX_FILES,
@@ -43,9 +46,10 @@ import {
 } from "./rank";
 
 const PANE = "file-picker";
-const PARENT_KEY = "row:..";
 const MORE_ABOVE = "more:above";
 const MORE_BELOW = "more:below";
+const MARK_AGAIN = "mark:again";
+const FILES_AGAIN = "files:again";
 // List: header, filter box (3), '..' (or search's limits line), the two "more"
 // rows, the footer with its margin, hint; a footer that wraps takes more
 // (wrappedRows). Lines: header, status, find box (3), the two "more" rows,
@@ -99,6 +103,20 @@ const PEEKED_STATE = { plugin: "file-picker", key: "peeked" } as const;
 // to scroll, one that fits lets them walk the rows.
 let listRows = 10;
 let lineRows = 10;
+// What the list's footer labels hang on: a press that changes one can rewrap
+// the footer and so change the list's rows.
+type Footer = { peek: boolean; hidden: boolean; marks: number };
+// The list's rows as last drawn, under a footer changed by `change`, so a
+// press knows the rows it is about to leave.
+let listRowsAfter = (_change: Partial<Footer>) => listRows;
+// Which of two keys the m button and the line view's f button are drawn
+// under. A press that has to put the ring back flips one, so the key the ring
+// is first sent to is not on screen yet and the focus waits for the redraw.
+let markAgain = false;
+let filesAgain = false;
+// The line view's rows as last drawn, with or without a range start: its
+// "x: clear start" button can wrap the footer.
+let lineRowsAfter = (_anchored: boolean) => lineRows;
 // The row the ring is on, so `l` knows which file to open line by line.
 let focusedKey = "";
 // The previewed file's lines, read once when the line view opens.
@@ -474,7 +492,8 @@ function rankedHits(walk: Walk, query: string, hidden: boolean) {
 }
 
 // Starts a fresh walk of the working directory; the pane shows "searching…"
-// until it lands. A walk started later wins over an older one still running.
+// until it lands. A walk started later wins over an older one still running,
+// and the older one answers false.
 async function walkCwd($: EngineInterface) {
   const showHidden = await readState($, "showHidden");
   const root = await $.session.cwd();
@@ -485,9 +504,10 @@ async function walkCwd($: EngineInterface) {
   const walk = await walkProject(root, (dir) => $.fs.list(dir), showHidden, {
     aborted: () => project !== current,
   });
-  if (project !== current) return;
+  if (project !== current) return false;
   current.walk = walk;
   await updateState($, "walked", (n) => n + 1);
+  return true;
 }
 
 async function setSearch($: EngineInterface, enabled: boolean) {
@@ -645,6 +665,71 @@ async function ringToLine($: EngineInterface, n: number) {
   await focusFirst($, [lineKey(n)]);
 }
 
+// The keys of the list's rows, in the order drawn: recent files, search hits
+// or the folder's entries.
+async function listKeys($: EngineInterface) {
+  const query = await readState($, "query");
+  if (await readState($, "recentView")) {
+    const recent = await readState($, "recent");
+    return recentShown(recent, query).map((hit) => hitKey(hit.path));
+  }
+  if (await readState($, "search")) {
+    const walk = project?.walk;
+    if (!walk) return [];
+    const hidden = await readState($, "showHidden");
+    return rankedHits(walk, query, hidden).map((hit) => hitKey(hit.path));
+  }
+  const ranked = await rankedIn($, await currentDir($), query);
+  return ranked.map((entry) => rowKey(entry.name));
+}
+
+// Where the row `key` sits in a list window of `rows`: its index and the
+// window's first row, as the draw clamps it, or "" when it isn't drawn.
+async function placeOf($: EngineInterface, key: string, rows: number) {
+  const keys = await listKeys($);
+  const offset = Math.min(
+    await readState($, "offset"),
+    Math.max(0, keys.length - rows),
+  );
+  const index = keys.indexOf(key);
+  return index >= offset && index < offset + rows ? `${index}@${offset}` : "";
+}
+
+// The p and h buttons' keys name what a press does next, so each press draws
+// its button under a key the screen doesn't hold yet.
+const peekKey = (shown: boolean) => (shown ? "hide-peek" : "peek");
+const hiddenKey = (shown: boolean) => (shown ? "hide-hidden" : "hidden");
+
+// Puts the ring on `target` from ringAfterToggle ("" leaves it). Left on a
+// place the redraw moved, it would sit on another row or button while l, m
+// and Enter acted on the one it left. A focus on a key already drawn lands by
+// the order on screen, which the redraw then shifts; one on a key not drawn
+// yet, as the pressed button's next key is, waits for the redraw that draws it.
+async function ringToToggle($: EngineInterface, target: string) {
+  if (!target) return;
+  focusedKey = target;
+  await focusFirst($, [target]);
+}
+
+async function toggleHidden($: EngineInterface) {
+  const key = focusedKey;
+  const before = await placeOf($, key, listRows);
+  const searching = await readState($, "search");
+  // The old walk's hits give way to "searching…" at once, so the h button's
+  // new key is first drawn with the new walk's hits, which move the footer.
+  if (searching) project = {};
+  await updateState($, "showHidden", (v) => !v);
+  const shown = await readState($, "showHidden");
+  // Hidden folders are only walked when hidden files show.
+  if (searching) {
+    if (await walkCwd($))
+      await ringToToggle($, ringAfterToggle(key, "", "", hiddenKey(shown)));
+    return;
+  }
+  const after = await placeOf($, key, listRowsAfter({ hidden: shown }));
+  await ringToToggle($, ringAfterToggle(key, before, after, hiddenKey(shown)));
+}
+
 // Arrowing onto a "more" row moves the window one row and puts the ring on
 // the row that came into view, so the arrows keep walking.
 async function slide($: EngineInterface, by: 1 | -1) {
@@ -664,22 +749,7 @@ async function slide($: EngineInterface, by: 1 | -1) {
     );
     return ringToLine($, index + 1);
   }
-  const query = await readState($, "query");
-  const walk = project?.walk;
-  const searching = await readState($, "search");
-  const keys = (await readState($, "recentView"))
-    ? recentShown(await readState($, "recent"), query).map((hit) =>
-        hitKey(hit.path),
-      )
-    : searching
-      ? walk
-        ? rankedHits(walk, query, await readState($, "showHidden")).map((hit) =>
-            hitKey(hit.path),
-          )
-        : []
-      : (await rankedIn($, await currentDir($), query)).map((entry) =>
-          rowKey(entry.name),
-        );
+  const keys = await listKeys($);
   const offset = Math.min(
     await readState($, "offset"),
     Math.max(0, keys.length - listRows),
@@ -839,11 +909,38 @@ async function pressLine($: EngineInterface, n: number) {
   const path = await readState($, "preview");
   const anchor = await readState($, "anchor");
   if (!anchor) {
-    await updateState($, "anchor", () => n);
+    await setAnchor($, n, n);
     return $.ui.toast(`Range starts at line ${n}: Enter on the last line`);
   }
-  await updateState($, "anchor", () => 0);
+  await setAnchor($, 0, n);
   return pickFile($, path, rangeOf(anchor, n));
+}
+
+// The "x: clear start" button a range start brings (and its end or x takes
+// away) can rewrap the footer and so move the lines, as m does the list's
+// rows: the line the ring is on is kept in view and, when its place in the
+// pane's order changes, the ring is put back on it.
+async function setAnchor($: EngineInterface, anchor: number, ringLine: number) {
+  const total = previewLines?.lines.length ?? 0;
+  const offset = Math.min(
+    await readState($, "lineOffset"),
+    Math.max(0, total - lineRows),
+  );
+  const index = ringLine - 1;
+  const kept = windowAround(index, offset, lineRowsAfter(anchor > 0), total);
+  const drawn = index >= offset && index < offset + lineRows;
+  // "↑ N more" comes before the lines, so it counts toward the place too.
+  const placeAt = (first: number) => (first > 0 ? 1 : 0) + index - first;
+  const moved = drawn && placeAt(kept) !== placeAt(offset);
+  if (moved) filesAgain = !filesAgain;
+  // The start first, as setMarks writes the marks first: the redraw between
+  // the two writes has the line out of view or already clamped to `kept`.
+  await updateState($, "anchor", () => anchor);
+  if (!drawn) return;
+  await updateState($, "lineOffset", () => kept);
+  if (!moved) return;
+  await focusFirst($, [filesAgain ? FILES_AGAIN : "files"]);
+  await ringToLine($, ringLine);
 }
 
 async function findInLines($: EngineInterface, query: string) {
@@ -877,7 +974,7 @@ async function markFocused($: EngineInterface) {
   // A search result is always a file, named by its full path.
   if (focusedKey.startsWith("hit:")) {
     const path = focusedKey.slice(4);
-    return updateState($, "marked", (marks) => toggleMark(marks, path));
+    return setMarks($, toggleMark(await readState($, "marked"), path));
   }
   if (!focusedKey.startsWith("row:") || focusedKey === PARENT_KEY)
     return $.ui.toast("Arrow onto a file first, then press m");
@@ -890,9 +987,38 @@ async function markFocused($: EngineInterface) {
     return $.ui.toast(
       "Folders can't be marked: open one and press a to add it",
     );
-  await updateState($, "marked", (marks) =>
-    toggleMark(marks, joinPath(dir, name)),
+  const marks = await readState($, "marked");
+  await setMarks($, toggleMark(marks, joinPath(dir, name)));
+}
+
+// The "insert" button the marks bring, grow and take away can rewrap the
+// footer and so move the list's rows. The highlighted row is kept in view,
+// and when its place in the pane's order changes the ring is put back on it:
+// the engine keeps a ring at its place in that order, so it would sit on
+// another row or a "more" button while m and l acted on the row it left.
+async function setMarks($: EngineInterface, marks: string[]) {
+  const key = focusedKey;
+  const keys = await listKeys($);
+  const index = keys.indexOf(key);
+  const offset = Math.min(
+    await readState($, "offset"),
+    Math.max(0, keys.length - listRows),
   );
+  const rows = listRowsAfter({ marks: marks.length });
+  const kept = windowAround(index, offset, rows, keys.length);
+  const drawn = index >= offset && index < offset + listRows;
+  if (!drawn || kept === offset) {
+    await updateState($, "marked", () => marks);
+    return;
+  }
+  markAgain = !markAgain;
+  // The marks first: a redraw between the two writes then has the row out
+  // of view (m) or clamps the offset to `kept` itself (i), so the ring never
+  // lands on the row at a place the second write moves.
+  await updateState($, "marked", () => marks);
+  await updateState($, "offset", () => kept);
+  await focusFirst($, [markAgain ? MARK_AGAIN : "mark"]);
+  await focusFirst($, [key]);
 }
 
 // `i`: every marked file goes through the checks a single pick does, and the
@@ -928,7 +1054,7 @@ async function insertMarked($: EngineInterface) {
   }
   const skips = skipped.length ? `Skipped ${skipped.join(", ")}` : "";
   if (mentions.size === 0) {
-    await updateState($, "marked", () => []);
+    await setMarks($, []);
     return $.ui.toast(`Nothing added. ${skips}`);
   }
   const text = [...mentions].join("");
@@ -938,7 +1064,7 @@ async function insertMarked($: EngineInterface) {
   // The marks stay when the fill fails, so the person can try again.
   if (!filled.isFilled)
     return $.ui.toast("Could not add the marked files to the prompt");
-  await updateState($, "marked", () => []);
+  await setMarks($, []);
   await rememberRecent($, added);
   $.ui.toast(
     `Added ${mentions.size} ${mentions.size === 1 ? "file" : "files"}${skips ? `. ${skips}` : ""}`,
@@ -970,7 +1096,8 @@ async function peekAt($: EngineInterface, path: string) {
   }
   if (isBinaryText(text)) return notice("binary file");
   if (text === "") return notice("(empty file)");
-  return { lines: headLines(text, peekFits), notice: "" };
+  // As many lines as the preview ever shows, so a pane that grows fills up.
+  return { lines: headLines(text, PEEK_MAX_LINES), notice: "" };
 }
 
 async function loadPeek($: EngineInterface) {
@@ -1001,7 +1128,12 @@ async function schedulePeek($: EngineInterface) {
 }
 
 async function togglePeek($: EngineInterface) {
+  const key = focusedKey;
+  const before = await placeOf($, key, listRows);
   await updateState($, "peek", (v) => !v);
+  const shown = await readState($, "peek");
+  const after = await placeOf($, key, listRowsAfter({ peek: shown }));
+  await ringToToggle($, ringAfterToggle(key, before, after, peekKey(shown)));
   await schedulePeek($);
 }
 
@@ -1115,12 +1247,28 @@ export const register: Register = (on) => {
 
     const preview = await readState($, "preview");
     if (preview && previewLines?.path === preview) {
-      lineRows = Math.max(
-        1,
-        e.props.scroll.bodyRows - LINES_CHROME_ROWS + saved,
-      );
-      const lines = previewLines.lines;
       const anchor = await readState($, "anchor");
+      // The chrome counts one footer row; a narrow pane wraps the buttons.
+      const rowsWith = (anchored: boolean) => {
+        const footerRows = wrappedRows(
+          [
+            "f: files",
+            "w: whole file",
+            ...(anchored ? ["x: clear start"] : []),
+          ],
+          e.props.bodyColumns,
+        );
+        return Math.max(
+          1,
+          e.props.scroll.bodyRows -
+            LINES_CHROME_ROWS -
+            (footerRows - 1) +
+            saved,
+        );
+      };
+      lineRowsAfter = rowsWith;
+      lineRows = rowsWith(anchor > 0);
+      const lines = previewLines.lines;
       const ringLine = await readState($, "focusLine");
       const range = anchor && ringLine ? rangeOf(anchor, ringLine) : undefined;
       const offset = Math.min(
@@ -1224,7 +1372,13 @@ export const register: Register = (on) => {
             columnGap={2}
             marginTop={compact ? 0 : 1}
           >
-            <Button plain hotkey="f" dimColor onPress={() => closeLines($)}>
+            <Button
+              key={filesAgain ? FILES_AGAIN : "files"}
+              plain
+              hotkey="f"
+              dimColor
+              onPress={() => closeLines($)}
+            >
               files
             </Button>
             <Button
@@ -1240,7 +1394,7 @@ export const register: Register = (on) => {
                 plain
                 hotkey="x"
                 dimColor
-                onPress={() => updateState($, "anchor", () => 0)}
+                onPress={() => setAnchor($, 0, ringLine)}
               >
                 clear start
               </Button>
@@ -1259,35 +1413,33 @@ export const register: Register = (on) => {
     const query = await readState($, "query");
     const marked = await readState($, "marked");
     const markedSet = new Set(marked);
-    const hiddenLabel = showHidden ? "hide hidden" : "hidden";
-    const markLabels = [
+    const hiddenLabelOf = (shown: boolean) =>
+      shown ? "hide hidden" : "hidden";
+    const markLabelsOf = (marks: number) => [
       "m: mark",
-      ...(marked.length > 0 ? [`i: insert ${marked.length} marked`] : []),
+      ...(marks > 0 ? [`i: insert ${marks} marked`] : []),
     ];
+    const walking = (await readState($, "search")) && !project?.walk;
     const hiddenButton = (
       <Button
-        key="hidden"
+        key={walking ? "hidden-walking" : hiddenKey(showHidden)}
         plain
         hotkey="h"
         dimColor
-        onPress={async () => {
-          // The highlighted row may be about to vanish.
-          focusedKey = "";
-          await updateState($, "showHidden", (v) => !v);
-          // Hidden folders are only walked when hidden files show.
-          if (await readState($, "search")) await walkCwd($);
-        }}
+        onPress={() => toggleHidden($)}
       >
-        {hiddenLabel}
+        {hiddenLabelOf(showHidden)}
       </Button>
     );
     const peeking = await readState($, "peek");
     // Read so the pane redraws when a preview read lands.
     if (peeking) await readState($, "peeked");
-    const peekLabel = peeking ? "hide preview" : "preview";
+    const peekLabelOf = (shown: boolean) =>
+      shown ? "hide preview" : "preview";
+    const peekLabel = peekLabelOf(peeking);
     const peekButton = (
       <Button
-        key="peek"
+        key={peekKey(peeking)}
         plain
         hotkey="p"
         dimColor
@@ -1296,15 +1448,24 @@ export const register: Register = (on) => {
         {peekLabel}
       </Button>
     );
-    // The list's rows: what the pane leaves it, less the preview's share when
-    // the preview is on and fits.
-    const listRoom = (footerRows: number) => {
-      const room =
-        e.props.scroll.bodyRows - LIST_CHROME_ROWS - (footerRows - 1) + saved;
-      peekFits = peekLines(room, e.props.bodyColumns, compact);
-      const peekRows =
-        peeking && peekFits > 0 ? peekFits + PEEK_CHROME_ROWS : 0;
-      return Math.max(1, room - peekRows);
+    // The list's rows under the footer `labelsFor` draws (one row is in the
+    // chrome; a narrow pane wraps more): what the pane leaves it, less the
+    // preview's share when the preview is on and fits. Worked out for any
+    // footer, so p, h, m and i know the rows their press is about to leave.
+    const listRoom = (labelsFor: (footer: Footer) => string[]) => {
+      const now = { peek: peeking, hidden: showHidden, marks: marked.length };
+      const rowsWith = (footer: Footer) => {
+        const footerRows = wrappedRows(labelsFor(footer), e.props.bodyColumns);
+        const room =
+          e.props.scroll.bodyRows - LIST_CHROME_ROWS - (footerRows - 1) + saved;
+        const fits = peekLines(room, e.props.bodyColumns, compact);
+        const peekRows = footer.peek && fits > 0 ? fits + PEEK_CHROME_ROWS : 0;
+        return { fits, rows: Math.max(1, room - peekRows) };
+      };
+      listRowsAfter = (change) => rowsWith({ ...now, ...change }).rows;
+      const drawn = rowsWith(now);
+      peekFits = drawn.fits;
+      return drawn.rows;
     };
     // The last file stays up while the read for the next row waits, so the
     // arrows don't flash the hint; once nothing is pending, a preview of a
@@ -1342,17 +1503,13 @@ export const register: Register = (on) => {
       // Read so the pane redraws when the walk lands.
       await readState($, "walked");
       const recent = recentView ? await readState($, "recent") : [];
-      const footerRows = wrappedRows(
-        [
-          "l: lines",
-          "f: folders",
-          ...(recentView ? [] : [`h: ${hiddenLabel}`]),
-          `p: ${peekLabel}`,
-          ...markLabels,
-        ],
-        e.props.bodyColumns,
-      );
-      listRows = listRoom(footerRows);
+      listRows = listRoom((footer) => [
+        "l: lines",
+        "f: folders",
+        ...(recentView ? [] : [`h: ${hiddenLabelOf(footer.hidden)}`]),
+        `p: ${peekLabelOf(footer.peek)}`,
+        ...markLabelsOf(footer.marks),
+      ]);
       const walk = recentView ? undefined : project?.walk;
       const hits = recentView
         ? recentShown(recent, query)
@@ -1510,7 +1667,7 @@ export const register: Register = (on) => {
             {!recentView && hiddenButton}
             {peekButton}
             <Button
-              key="mark"
+              key={markAgain ? MARK_AGAIN : "mark"}
               plain
               hotkey="m"
               dimColor
@@ -1559,23 +1716,19 @@ export const register: Register = (on) => {
       );
     }
 
-    // The chrome counts one row for each footer; a narrow pane wraps them.
-    const footerRows = wrappedRows(
-      [
-        "l: lines",
-        "s: search project",
-        "r: recent",
-        "u: up",
-        ...(prevDir && prevDir !== dir ? ["b: back"] : []),
-        "c: cwd",
-        `h: ${hiddenLabel}`,
-        `p: ${peekLabel}`,
-        "a: @ folder",
-        ...markLabels,
-      ],
-      e.props.bodyColumns,
-    );
-    listRows = listRoom(footerRows);
+    // Listed in the order the buttons draw, since the order decides the wraps.
+    listRows = listRoom((footer) => [
+      "l: lines",
+      "s: search project",
+      "r: recent",
+      "u: up",
+      ...(prevDir && prevDir !== dir ? ["b: back"] : []),
+      "c: cwd",
+      `h: ${hiddenLabelOf(footer.hidden)}`,
+      `p: ${peekLabelOf(footer.peek)}`,
+      "a: @ folder",
+      ...markLabelsOf(footer.marks),
+    ]);
     const pathMode = isPathQuery(query);
     const ranked = pathMode ? [] : rankEntries(listed, query, showHidden);
     // Counted by the rule the ranking uses: hidden entries count only when
@@ -1751,7 +1904,7 @@ export const register: Register = (on) => {
           >
             up
           </Button>
-          {prevDir && prevDir !== dir && (
+          {prevDir !== "" && prevDir !== dir && (
             <Button plain hotkey="b" dimColor onPress={() => goTo($, prevDir)}>
               back
             </Button>
@@ -1771,7 +1924,7 @@ export const register: Register = (on) => {
             @ folder
           </Button>
           <Button
-            key="mark"
+            key={markAgain ? MARK_AGAIN : "mark"}
             plain
             hotkey="m"
             dimColor
