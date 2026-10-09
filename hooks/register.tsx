@@ -1507,15 +1507,28 @@ export const register: Register = (on) => {
         view: feedbackFrom,
         message: lastMessage,
       };
+      // Back and both links come first: the pane scrolls to the focused back
+      // button, and a short terminal can leave the body two rows.
       return (
         <Box flexDirection="column" gap={compact ? 0 : 1}>
-          <Text bold color="claude">
-            Feedback
-          </Text>
+          <Box gap={2}>
+            <Text bold color="claude">
+              Feedback
+            </Text>
+            <Button
+              key="feedback:back"
+              plain
+              hotkey="f"
+              dimColor
+              autoFocus
+              onPress={() => closeFeedback($)}
+            >
+              back
+            </Button>
+          </Box>
           <Text>
             <Link href={feedbackUrl("bug", facts)}>Report a bug</Link>
-          </Text>
-          <Text>
+            {" · "}
             <Link href={feedbackUrl("idea", facts)}>Suggest a feature</Link>
           </Text>
           <Text dimColor>
@@ -1523,16 +1536,6 @@ export const register: Register = (on) => {
             versions and pane details filled in (no file names or paths).
             Nothing is sent until you submit it there.
           </Text>
-          <Button
-            key="feedback:back"
-            plain
-            hotkey="f"
-            dimColor
-            autoFocus
-            onPress={() => closeFeedback($)}
-          >
-            back
-          </Button>
         </Box>
       );
     }

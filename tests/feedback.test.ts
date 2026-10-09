@@ -195,3 +195,24 @@ for (const [COLUMNS, ROWS] of [
     await fits();
     await ui.unmount();
   });
+
+// A 60x14 terminal leaves the pane a body of two rows: the focused back
+// button and both links are those two rows, so the links are on screen.
+test("Feedback puts back and both links in a two-row body", async ($, on) => {
+  mockProject(on);
+  on("ui.open", () => ({ value: { isPlaced: true } }));
+  const run: any = { command: "files", args: "bug" };
+  await $.command.run(run);
+  const ui = await $.ui.mount({
+    plugin: "file-picker",
+    surface: "terminal",
+    component: "Pane",
+    requestId: "file-picker",
+    props: paneProps(56, 2),
+  });
+  const rows = JSON.stringify(((await ui.drawn()) as any).children.slice(0, 2));
+  expect(rows).toContain('"key":"feedback:back"');
+  expect(rows).toContain("Report a bug");
+  expect(rows).toContain("Suggest a feature");
+  await ui.unmount();
+});
