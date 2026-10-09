@@ -621,7 +621,7 @@ test("an old git or a SHA-256 repository shows the refusal, no list", async ($, 
   await ui.unmount();
 });
 
-test("a SHA-256 repository says it isn't supported", async ($, on) => {
+test("a SHA-256 repository that needs attributes says git stopped", async ($, on) => {
   wire(on, {
     exitCode: 128,
     stderr: "fatal: bad --attr-source or GIT_ATTR_SOURCE\n",
@@ -629,7 +629,7 @@ test("a SHA-256 repository says it isn't supported", async ($, on) => {
   const ui = await mount($);
   await ui.press({ key: "changes" });
   expect(
-    await until(ui, { text: /SHA-256 repositories aren't supported/ }),
+    await until(ui, { text: /can't skip a SHA-256 repository's filters/ }),
   ).toBe(true);
   await ui.unmount();
 });

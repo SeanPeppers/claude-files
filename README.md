@@ -239,9 +239,11 @@ git config. Press `g` only where you'd run `git status` yourself.
 
 `g` needs git 2.45 or newer (for `--no-lazy-fetch`; `--attr-source` came in
 2.41). An older git stops at the unknown option before reading anything, and
-the pane says a newer git is needed. In a SHA-256 repository git rejects the
-SHA-1 empty tree the same way, and the pane says such repositories aren't
-supported. Apart from that one command, the plugin runs nothing, never writes
+the pane says a newer git is needed. In a SHA-256 repository git can't use
+the SHA-1 empty tree, so it may refuse whenever it needs attributes, which is
+when it has to re-read a file whose timestamps changed but size didn't. Then
+the pane says git stopped; otherwise it lists the changes. Either way no
+filter runs. Apart from that one command, the plugin runs nothing, never writes
 files or touches the network, never reads your Claude Code settings, and
 nothing is sent until you press Enter on the prompt yourself.
 

@@ -563,8 +563,10 @@ export const ancestorsOf = (path: string) => {
   return out;
 };
 
-// Git's well-known empty tree. It's SHA-1, so a SHA-256 repository rejects it
-// and git stops before reading anything (see gitFailNote).
+// Git's well-known empty tree. It's SHA-1, so in a SHA-256 repository git
+// fails with "bad --attr-source" whenever it needs attributes (to re-read a
+// file whose timestamps changed but size didn't) and lists normally when it
+// doesn't. Either way no filter runs.
 const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
 // Why `git status` gave no list, for the pane. A git too old for
@@ -574,7 +576,7 @@ export const gitFailNote = (exitCode: number, stderr: string) => {
   if (exitCode === 129 && stderr.includes("unknown option"))
     return "git 2.45 or newer is needed to keep repository filters from running";
   if (stderr.includes("bad --attr-source"))
-    return "SHA-256 repositories aren't supported: git can't skip their filters";
+    return "git stopped: it can't skip a SHA-256 repository's filters to re-read a file";
   return `git status failed: ${stderr.trim().split("\n")[0] || `exit ${exitCode}`}`;
 };
 
