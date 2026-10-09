@@ -1,6 +1,7 @@
-import { expect, test } from "claude-code/testing";
+import { expect, mock, test } from "claude-code/testing";
 
 import { wrappedRows } from "../hooks/rank";
+import { heightOf } from "./height";
 import { posix } from "./posix";
 
 test("wrappedRows counts the rows a wrapping footer takes", async () => {
@@ -16,37 +17,6 @@ test("wrappedRows counts the rows a wrapping footer takes", async () => {
   expect(wrappedRows(["漢字", "ab"], 7)).toBe(2);
 });
 
-// Rows the drawn tree takes, laid out as the terminal does: a column stacks
-// its children, a wrapping row of Buttons wraps by their labels, a border
-// adds two rows. Every Text and Button here stays on one row.
-type Node = string | { type: string; props?: any; children?: Node[] };
-const heightOf = (node: Node, columns: number): number => {
-  if (typeof node === "string") return node ? 1 : 0;
-  const props = node.props ?? {};
-  const kids = node.children ?? [];
-  if (node.type !== "Box") return 1;
-  const frame = (props.borderStyle ? 2 : 0) + (props.marginTop ?? 0);
-  if (props.flexDirection === "column") {
-    const shown = kids.filter((kid) => kid !== "");
-    return (
-      frame +
-      shown.reduce((sum: number, kid) => sum + heightOf(kid, columns), 0) +
-      (props.gap ?? 0) * Math.max(0, shown.length - 1)
-    );
-  }
-  if (props.flexWrap === "wrap") {
-    const labels = kids
-      .filter((kid): kid is Exclude<Node, string> => typeof kid !== "string")
-      .map((kid) =>
-        kid.props.hotkey
-          ? `${kid.props.hotkey}: ${kid.props.label}`
-          : kid.props.label,
-      );
-    return frame + wrappedRows(labels, columns, props.columnGap ?? 0);
-  }
-  return frame + Math.max(0, ...kids.map((kid) => heightOf(kid, columns)));
-};
-
 const NAMES = Array.from(
   { length: 60 },
   (_, i) => `f${String(i).padStart(2, "0")}.ts`,
@@ -54,13 +24,19 @@ const NAMES = Array.from(
 
 // Wide and narrow docks, and the short inline band (compact layout); below
 // about 9 rows at 40 columns even one list row can't fit.
+// At 39 columns a mark wraps the folder footer to a fourth row, which only
+// the labels counted in the order the buttons draw foresee.
 for (const [COLUMNS, BODY_ROWS] of [
   [40, 20],
   [40, 11],
   [40, 9],
+  [39, 11],
   [90, 11],
 ] as const)
-  test(`list, search, changes and lines stay within ${BODY_ROWS} rows at ${COLUMNS} columns`, async ($, on) => {
+  test(`list, search, recent, changes and lines stay within ${BODY_ROWS} rows at ${COLUMNS} columns`, async ($, on) => {
+    mock.store(on, {
+      recent: { "/p": NAMES.slice(0, 10).map((name) => `/p/${name}`) },
+    });
     on("session.cwd", () => ({ value: "/p" }));
     on("fs.list", (_: any, e: any) => {
       const dir = posix(e.path);
@@ -135,6 +111,13 @@ for (const [COLUMNS, BODY_ROWS] of [
     for (let i = 0; i < 200 && !landed; i++)
       landed = (await ui.find({ key: "hit:/p/f00.ts" })) !== undefined;
     expect(landed).toBe(true);
+    await ui.press({ key: "more:below" });
+    expect(await ui.find({ key: "more:above" })).toBeDefined();
+    expect(heightOf(await ui.drawn(), COLUMNS)).toBeLessThanOrEqual(BODY_ROWS);
+
+    await ui.press({ key: "folders" });
+    await ui.press({ key: "recent" });
+    expect(await ui.find({ key: "hit:/p/f00.ts" })).toBeDefined();
     await ui.press({ key: "more:below" });
     expect(await ui.find({ key: "more:above" })).toBeDefined();
     expect(heightOf(await ui.drawn(), COLUMNS)).toBeLessThanOrEqual(BODY_ROWS);
