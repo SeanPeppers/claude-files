@@ -1,4 +1,5 @@
-import { expect, mock, test } from "claude-code/testing";
+import { expect, mock } from "claude-code/testing";
+import { test } from "./kit";
 
 import { posix } from "./posix";
 

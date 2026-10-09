@@ -1,7 +1,7 @@
-import { expect, mock, test } from "claude-code/testing";
-
+import { expect, mock } from "claude-code/testing";
 import { wrappedRows } from "../hooks/rank";
 import { heightOf } from "./height";
+import { test } from "./kit";
 import { posix } from "./posix";
 
 test("wrappedRows counts the rows a wrapping footer takes", async () => {

@@ -1,5 +1,4 @@
-import { expect, test } from "claude-code/testing";
-
+import { expect } from "claude-code/testing";
 import type { Entry, Hit } from "../hooks/rank";
 import {
   fitCellsStart,
@@ -7,6 +6,7 @@ import {
   rankHits,
   walkProject,
 } from "../hooks/rank";
+import { test } from "./kit";
 import { posix } from "./posix";
 
 const file = (name: string): Entry => ({ name, kind: "file", size: 1 });

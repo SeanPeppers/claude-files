@@ -1,11 +1,11 @@
-import { expect, mock, test } from "claude-code/testing";
-
+import { expect, mock } from "claude-code/testing";
 import {
   headLines,
   PEEK_CHROME_ROWS,
   PEEK_MAX_BYTES,
   peekLines,
 } from "../hooks/rank";
+import { test } from "./kit";
 import { posix } from "./posix";
 
 const ROOT = "/p";

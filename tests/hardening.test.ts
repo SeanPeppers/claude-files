@@ -1,4 +1,4 @@
-import { expect, test } from "claude-code/testing";
+import { expect } from "claude-code/testing";
 import {
   baseName,
   displayName,
@@ -12,6 +12,7 @@ import {
   rankEntries,
   resolveTyped,
 } from "../hooks/rank";
+import { test } from "./kit";
 import { posix } from "./posix";
 
 test("names that could inject into the prompt are refused, not mentioned", async () => {

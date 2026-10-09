@@ -1,6 +1,6 @@
-import { expect, mock, test } from "claude-code/testing";
-
+import { expect, mock } from "claude-code/testing";
 import { PEEK_MAX_BYTES, ringAfterToggle } from "../hooks/rank";
+import { test } from "./kit";
 import { posix } from "./posix";
 
 // Edge cases for the browsing preview: odd names, links to secrets, size
