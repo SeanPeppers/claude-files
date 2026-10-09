@@ -1904,7 +1904,7 @@ export const register: Register = (on) => {
           >
             up
           </Button>
-          {prevDir && prevDir !== dir && (
+          {prevDir !== "" && prevDir !== dir && (
             <Button plain hotkey="b" dimColor onPress={() => goTo($, prevDir)}>
               back
             </Button>
