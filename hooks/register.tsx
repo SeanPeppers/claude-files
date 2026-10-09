@@ -941,14 +941,25 @@ async function toggleHidden($: EngineInterface) {
 // The slide a "more" row's focus started, and the window it started from. A
 // click or tap raises that focus just before the press, so the press pages
 // from where the window was, not from the row the slide moved it on.
+type Slid = { from: number; list: string };
 let pendingSlide:
-  | { element: string; from: Promise<number | undefined> }
+  | { element: string; slid: Promise<Slid | undefined> }
   | undefined;
+
+// Which list a window offset belongs to: a slide's offset means nothing to a
+// press in another folder, in search or in a file's lines.
+async function listShown($: EngineInterface) {
+  if (previewLines) return `lines:${previewLines.path}`;
+  if (await readState($, "search"))
+    return (await readState($, "changes")) ? "changes" : "search";
+  return `dir:${await currentDir($)}`;
+}
 
 // Arrowing onto a "more" row moves the window one row and puts the ring on
 // the row that came into view, so the arrows keep walking. Resolves to the
 // offset it slid from, as stored: a press clamps it to its own list.
 async function slide($: EngineInterface, by: 1 | -1) {
+  const list = await listShown($);
   const { listRows, lineRows } = steered();
   if (previewLines) {
     const total = previewLines.lines.length;
@@ -963,7 +974,7 @@ async function slide($: EngineInterface, by: 1 | -1) {
       windowAround(index, offset, lineRows, total),
     );
     await ringToLine($, index + 1);
-    return from;
+    return { from, list };
   }
   const keys = await listKeys($);
   const from = await readState($, "offset");
@@ -982,11 +993,11 @@ async function slide($: EngineInterface, by: 1 | -1) {
   focusedKey = target;
   void schedulePeek($).catch(() => undefined);
   await focusFirst($, [target]);
-  return from;
+  return { from, list };
 }
 
 // A press on a "more" row pages from the window as it is now, or as it was
-// before the slide that the same row's focus started.
+// before the slide that the same row's focus started in this same list.
 async function pageBy(
   $: EngineInterface,
   key: "offset" | "lineOffset",
@@ -995,10 +1006,12 @@ async function pageBy(
   rows: number,
 ) {
   const element = by > 0 ? MORE_BELOW : MORE_ABOVE;
-  const slid =
-    pendingSlide?.element === element ? pendingSlide.from : undefined;
+  const pending =
+    pendingSlide?.element === element ? pendingSlide.slid : undefined;
   pendingSlide = undefined;
-  const from = await slid;
+  const slid = await pending;
+  const from =
+    slid && slid.list === (await listShown($)) ? slid.from : undefined;
   const last = Math.max(0, total - rows);
   await updateState($, key, (current) =>
     Math.min(Math.max(0, Math.min(from ?? current, last) + by), last),
@@ -1546,12 +1559,14 @@ export const register: Register = (on) => {
       // Keep the ring where it is; slide() moves it once the new rows draw.
       pendingSlide = {
         element: e.element,
-        from: slide($, e.element === MORE_BELOW ? 1 : -1).catch(
+        slid: slide($, e.element === MORE_BELOW ? 1 : -1).catch(
           () => undefined,
         ),
       };
       return {};
     }
+    // The person moved on, so no press that follows belongs to that slide.
+    if (e.origin.kind === "person") pendingSlide = undefined;
     const result = await next(e);
     if (!("deny" in result)) {
       focusedKey = e.element ?? "";

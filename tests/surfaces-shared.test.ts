@@ -2,9 +2,9 @@ import { expect, test } from "claude-code/testing";
 
 import { posix } from "./posix";
 
-// Two surfaces drawing one session at once, hostile pane sizes, and a filter
-// left by the desktop seen from mobile: in the folder, in search and in line
-// view.
+// Two surfaces drawing one session at once, a "more" press that comes without
+// its own focus, hostile pane sizes, and a filter left by the desktop seen
+// from mobile: in the folder, in search and in line view.
 
 const file = (name: string, kind: "file" | "dir" = "file") => ({
   name,
@@ -14,7 +14,11 @@ const file = (name: string, kind: "file" | "dir" = "file") => ({
   isLink: false,
 });
 
-function wire(on: any, tree: Record<string, ReturnType<typeof file>[]>) {
+function wire(
+  on: any,
+  tree: Record<string, ReturnType<typeof file>[]>,
+  text = "one\ntwo",
+) {
   const log = {
     filled: [] as string[],
     toasts: [] as string[],
@@ -36,7 +40,7 @@ function wire(on: any, tree: Record<string, ReturnType<typeof file>[]>) {
   }));
   on("fs.read", (_: any, e: any) => {
     log.read.push(posix(e.path) ?? "");
-    return { value: "one\ntwo" };
+    return { value: text };
   });
   on("ui.focus", () => ({ value: {} }));
   on("ui.toast", (_: any, e: any) => {
@@ -116,6 +120,32 @@ for (const surface of ["terminal", "desktop"])
     await desk.unmount();
   });
 
+for (const surface of ["desktop", "vscode", "mobile"])
+  test(`a slide left in one folder doesn't steer a press in the next [${surface}]`, async ($, on) => {
+    wire(on, {
+      "/p": [file("big", "dir"), file("small", "dir")],
+      "/p/big": many("g", 70),
+      "/p/small": many("s", 70),
+    });
+    const ui = await mount($, surface, 20, 80);
+    await ui.press({ key: "row:big" });
+    // Walk well down the big folder by its "more" row.
+    for (let i = 0; i < 30; i++) await focusOn($, "more:below");
+    expect(
+      await waitFor(async () => !(await rowsShown(ui)).includes("g00.ts")),
+    ).toBe(true);
+    await ui.press({ key: "up" });
+    await ui.press({ key: "row:small" });
+    const first = await rowsShown(ui);
+    expect(first[0]).toBe("s00.ts");
+    // A press that arrives without a focus of its own (a click while the
+    // pane doesn't hold the keyboard) pages from what is shown.
+    await ui.press({ key: "more:below" });
+    const second = await rowsShown(ui);
+    expect(second[0]).toBe(`s${String(first.length).padStart(2, "0")}.ts`);
+    await ui.unmount();
+  });
+
 for (const surface of ["terminal", "desktop", "mobile"])
   test(`negative, fractional and NaN pane sizes still draw [${surface}]`, async ($, on) => {
     wire(on, { "/p": many("f", 30) });
@@ -167,6 +197,43 @@ test("mobile: a desktop filter doesn't follow into line view or the next folder"
   expect(await phone.find({ key: "line:1" })).toBeDefined();
   expect(await phone.find({ type: "Input" })).toBeUndefined();
   await phone.unmount();
+});
+
+test("a press after the ring moved on pages from the window shown [desktop]", async ($, on) => {
+  wire(on, { "/p": many("f", 70) });
+  const ui = await mount($, "desktop", 20, 80);
+  const first = await rowsShown(ui);
+  // Arrow onto ↓ more (the window slides one row), back up onto a row, then
+  // a click on ↓ more that raises no focus of its own.
+  await focusOn($, "more:below");
+  expect(await waitFor(async () => (await rowsShown(ui))[0] === "f01.ts")).toBe(
+    true,
+  );
+  await focusOn($, `row:${first[first.length - 1]}`);
+  await ui.press({ key: "more:below" });
+  expect((await rowsShown(ui))[0]).toBe(
+    `f${String(1 + first.length).padStart(2, "0")}.ts`,
+  );
+  await ui.unmount();
+});
+
+test("a slide left in the folder list doesn't steer line view [desktop]", async ($, on) => {
+  const text = Array.from({ length: 100 }, (_, i) => `line ${i + 1}`).join(
+    "\n",
+  );
+  wire(on, { "/p": many("f", 70) }, text);
+  const ui = await mount($, "desktop", 20, 80);
+  for (let i = 0; i < 20; i++) await focusOn($, "more:below");
+  expect(
+    await waitFor(async () => !(await rowsShown(ui)).includes("f00.ts")),
+  ).toBe(true);
+  // No focus of its own: `lines` opens the row the slides left the ring on.
+  await ui.press({ key: "lines" });
+  const first = await rowsShown(ui, "line:");
+  expect(first[0]).toBe("1");
+  await ui.press({ key: "more:below" });
+  expect((await rowsShown(ui, "line:"))[0]).toBe(String(first.length + 1));
+  await ui.unmount();
 });
 
 for (const view of ["folder", "search"] as const)

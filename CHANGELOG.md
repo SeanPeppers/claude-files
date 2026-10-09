@@ -112,6 +112,9 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   once (Remote Control), arrowing onto a `↓ N more` row slides the keyboard
   surface's own filtered list by its own pane size, so `l` and `m` act on
   the row it shows rather than on a row of the phone's unfiltered list.
+- A click or tap on `↓ N more` that raises no focus of its own pages from
+  the window shown, not from where an earlier slide in another folder, in
+  search or before the ring moved on left it.
 
 ## [0.4.3] - 2026-10-07
 
