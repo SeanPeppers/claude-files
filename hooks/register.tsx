@@ -108,9 +108,10 @@ type Footer = { peek: boolean; hidden: boolean; marks: number };
 // The list's rows as last drawn, under a footer changed by `change`, so a
 // press knows the rows it is about to leave.
 let listRowsAfter = (_change: Partial<Footer>) => listRows;
-// The mark count whose redraw draws the m button under MARK_AGAIN: a key not
-// on screen yet, so a focus on it waits for that redraw.
-let markAgainAt = -1;
+// Which of two keys the m button is drawn under. A press that has to put the
+// ring back flips it, so the key the ring is first sent to is not on screen
+// yet and the focus waits for the redraw.
+let markAgain = false;
 // The row the ring is on, so `l` knows which file to open line by line.
 let focusedKey = "";
 // The previewed file's lines, read once when the line view opens.
@@ -978,13 +979,13 @@ async function setMarks($: EngineInterface, marks: string[]) {
     await updateState($, "marked", () => marks);
     return;
   }
-  markAgainAt = marks.length;
+  markAgain = !markAgain;
   // The marks first: a redraw between the two writes then has the row out
   // of view (m) or clamps the offset to `kept` itself (i), so the ring never
   // lands on the row at a place the second write moves.
   await updateState($, "marked", () => marks);
   await updateState($, "offset", () => kept);
-  await focusFirst($, [MARK_AGAIN]);
+  await focusFirst($, [markAgain ? MARK_AGAIN : "mark"]);
   await focusFirst($, [key]);
 }
 
@@ -1621,7 +1622,7 @@ export const register: Register = (on) => {
             {!recentView && hiddenButton}
             {peekButton}
             <Button
-              key={marked.length === markAgainAt ? MARK_AGAIN : "mark"}
+              key={markAgain ? MARK_AGAIN : "mark"}
               plain
               hotkey="m"
               dimColor
@@ -1878,7 +1879,7 @@ export const register: Register = (on) => {
             @ folder
           </Button>
           <Button
-            key={marked.length === markAgainAt ? MARK_AGAIN : "mark"}
+            key={markAgain ? MARK_AGAIN : "mark"}
             plain
             hotkey="m"
             dimColor

@@ -217,3 +217,24 @@ test("i that clears the marks keeps the highlighted row at the list's end in vie
   expect(await ui.find({ text: /✓ f39\.txt/ })).toBeDefined();
   await ui.unmount();
 });
+
+// Each m or i that puts the ring back draws the m button under the key it
+// wasn't under, so the ring's first stop is never one already on screen.
+test("m then i that both move the row each draw the m button under a new key", async ($, on) => {
+  mock.clock(on);
+  wire(on, "/p", fortyFiles());
+  const ui = await mount($, 30, 100);
+  const last = (await drawnRows(ui)).at(-1);
+  await arrowOnto($, last);
+  const first = (await ui.find({ key: "mark" })) ? "mark" : "mark:again";
+  const second = first === "mark" ? "mark:again" : "mark";
+  await ui.press({ key: first });
+  expect(await ui.find({ key: second })).toBeDefined();
+  while (await ui.find({ key: "more:below" }))
+    await ui.press({ key: "more:below" });
+  await arrowOnto($, "row:f39.txt");
+  await ui.press({ key: "insert" });
+  expect((await drawnRows(ui)).at(-1)).toBe("row:f39.txt");
+  expect(await ui.find({ key: first })).toBeDefined();
+  await ui.unmount();
+});
