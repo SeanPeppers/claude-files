@@ -15,6 +15,7 @@ import {
   isSecretPath,
   isShown,
   joinPath,
+  keepRecent,
   mentionFor,
   PARENT_KEY,
   PEEK_CHROME_ROWS,
@@ -27,6 +28,10 @@ import {
   rangeOf,
   rankEntries,
   rankHits,
+  recentByDir,
+  recentHit,
+  recentOf,
+  recentShown,
   relativeTo,
   resolveTyped,
   ringAfterToggle,
@@ -36,6 +41,7 @@ import {
   WALK_MAX_FOLDERS,
   walkProject,
   windowAround,
+  withRecent,
   wrappedRows,
 } from "./rank";
 
@@ -79,6 +85,12 @@ const MARKED_STATE = { plugin: "file-picker", key: "marked" } as const;
 // count bumped when a project walk finishes, so the pane redraws.
 const SEARCH_STATE = { plugin: "file-picker", key: "search" } as const;
 const WALKED_STATE = { plugin: "file-picker", key: "walked" } as const;
+// Whether the list shows this project's recent files, and those files as
+// last checked: the ones still there, newest first.
+const RECENTVIEW_STATE = { plugin: "file-picker", key: "recentView" } as const;
+const RECENT_STATE = { plugin: "file-picker", key: "recent" } as const;
+// The plugin's store key: recent files by working directory (rank.ts).
+const RECENT_STORE = "recent";
 // Whether the list previews the highlighted file, and a count bumped when a
 // preview read lands, so the pane redraws.
 const PEEK_STATE = { plugin: "file-picker", key: "peek" } as const;
@@ -128,6 +140,8 @@ const INITIAL: State = {
   marked: [] as string[],
   search: false,
   walked: 0,
+  recentView: false,
+  recent: [] as State["recent"],
   peek: false,
   peeked: 0,
 };
@@ -235,6 +249,20 @@ async function heldState<K extends keyof State>(
       const held = await $.state.get(WALKED_STATE);
       return {
         value: (held.value ?? INITIAL.walked) as State[K],
+        version: held.version,
+      };
+    }
+    case "recentView": {
+      const held = await $.state.get(RECENTVIEW_STATE);
+      return {
+        value: (held.value ?? INITIAL.recentView) as State[K],
+        version: held.version,
+      };
+    }
+    case "recent": {
+      const held = await $.state.get(RECENT_STATE);
+      return {
+        value: (held.value ?? INITIAL.recent) as State[K],
         version: held.version,
       };
     }
@@ -361,9 +389,23 @@ async function writeState<K extends keyof State>(
       });
       return done.isSet;
     }
+    case "recentView": {
+      const next = value as State["recentView"];
+      const done = await $.state.set(RECENTVIEW_STATE, next, {
+        ifVersion: version,
+      });
+      return done.isSet;
+    }
     case "peek": {
       const next = value as State["peek"];
       const done = await $.state.set(PEEK_STATE, next, {
+        ifVersion: version,
+      });
+      return done.isSet;
+    }
+    case "recent": {
+      const next = value as State["recent"];
+      const done = await $.state.set(RECENT_STATE, next, {
         ifVersion: version,
       });
       return done.isSet;
@@ -457,10 +499,57 @@ async function walkCwd($: EngineInterface) {
 async function setSearch($: EngineInterface, enabled: boolean) {
   project = undefined;
   focusedKey = "";
+  await updateState($, "recentView", () => false);
   await updateState($, "search", () => enabled);
   await updateState($, "query", () => "");
   await updateState($, "offset", () => 0);
   if (enabled) void walkCwd($).catch(() => undefined);
+  await focusFirst($, ["filter"]);
+}
+
+// Puts `paths` at the top of this project's recent files. A store that can't
+// be read or written costs only the recent list, never the pick.
+async function rememberRecent($: EngineInterface, paths: string[]) {
+  const cwd = await $.session.cwd();
+  const stored = await $.store.get(RECENT_STORE).catch(() => undefined);
+  const next = withRecent(recentByDir(stored), cwd, paths);
+  await $.store.set(RECENT_STORE, next).catch(() => undefined);
+  // A pick made from the list moves its row to the top.
+  if (await readState($, "recentView")) await loadRecent($);
+}
+
+// This project's recent files that are still files, newest first, for the
+// list to draw. The ones gone since drop out of the store too.
+async function loadRecent($: EngineInterface) {
+  const cwd = await $.session.cwd();
+  const stored = await $.store.get(RECENT_STORE).catch(() => undefined);
+  const byDir = recentByDir(stored);
+  const paths = recentOf(byDir, cwd);
+  const hits: Hit[] = [];
+  for (const path of paths) {
+    const stat = await $.fs.stat(path).catch(() => undefined);
+    if (stat?.kind === "file") hits.push(recentHit(path, cwd, stat.size));
+  }
+  if (hits.length < paths.length) {
+    const kept = keepRecent(
+      byDir,
+      cwd,
+      hits.map((hit) => hit.path),
+    );
+    await $.store.set(RECENT_STORE, kept).catch(() => undefined);
+  }
+  await updateState($, "recent", () => hits);
+}
+
+// `r`: the recent files in place of the folder.
+async function showRecent($: EngineInterface) {
+  await loadRecent($);
+  project = undefined;
+  focusedKey = "";
+  await updateState($, "search", () => false);
+  await updateState($, "recentView", () => true);
+  await updateState($, "query", () => "");
+  await updateState($, "offset", () => 0);
   await focusFirst($, ["filter"]);
 }
 
@@ -512,7 +601,13 @@ async function focusFirst(
     const result = await $.ui
       .focus({ requestId: PANE, key })
       .catch(() => ({ deny: "threw" }));
-    if (!("deny" in result)) return;
+    if (!("deny" in result)) {
+      // Recorded here, not left to the focus hook: in the terminal a ring
+      // this plugin moves (back from the line view, say) doesn't reach it,
+      // and l, m and the preview stayed on the row left behind.
+      focusedKey = key;
+      return schedulePeek($);
+    }
   }
 }
 
@@ -535,6 +630,7 @@ async function goTo($: EngineInterface, path: string) {
   // A linked folder picked from a project search opens as a folder.
   project = undefined;
   await updateState($, "search", () => false);
+  await updateState($, "recentView", () => false);
   await updateState($, "query", () => "");
   await updateState($, "offset", () =>
     childIndex < 0 ? 0 : windowAround(childIndex, 0, listRows, ranked.length),
@@ -555,10 +651,14 @@ async function ringToLine($: EngineInterface, n: number) {
   await focusFirst($, [lineKey(n)]);
 }
 
-// The keys of the list's rows, in the order drawn: search hits or the folder's
-// entries.
+// The keys of the list's rows, in the order drawn: recent files, search hits
+// or the folder's entries.
 async function listKeys($: EngineInterface) {
   const query = await readState($, "query");
+  if (await readState($, "recentView")) {
+    const recent = await readState($, "recent");
+    return recentShown(recent, query).map((hit) => hitKey(hit.path));
+  }
   if (await readState($, "search")) {
     const walk = project?.walk;
     if (!walk) return [];
@@ -656,12 +756,15 @@ async function slide($: EngineInterface, by: 1 | -1) {
   await focusFirst($, [target]);
 }
 
+// Whether the mention went into the prompt.
 async function pick($: EngineInterface, path: string, range?: LineRange) {
   const mention = mentionFor(path, await $.session.cwd(), range);
-  if (!mention)
-    return $.ui.toast(
+  if (!mention) {
+    await $.ui.toast(
       `Not added: ${displayName(baseName(path))} can't be mentioned safely (a quote, a control character or a #L in its name could change what the prompt says)`,
     );
+    return false;
+  }
   const filled = await $.prompt
     .fill({ text: mention, mode: "insert" })
     .catch(() => ({ isFilled: false }));
@@ -670,6 +773,12 @@ async function pick($: EngineInterface, path: string, range?: LineRange) {
       ? `Added ${mention.trim()}`
       : `Could not add ${displayName(path)} to the prompt`,
   );
+  return filled.isFilled;
+}
+
+// A file, or lines of one, goes in and to the top of the recent files.
+async function pickFile($: EngineInterface, path: string, range?: LineRange) {
+  if (await pick($, path, range)) await rememberRecent($, [path]);
 }
 
 // A secrets-looking file, or a link that leads out of the project, needs a
@@ -711,9 +820,10 @@ async function clearConfirm($: EngineInterface) {
 async function cancelConfirm($: EngineInterface) {
   const path = await readState($, "confirm");
   await clearConfirm($);
-  // In search the ring goes back to the box, so typing goes on refining the
-  // search instead of reaching the main prompt.
-  if (await readState($, "search")) return focusFirst($, ["filter"]);
+  // In search or recent files the ring goes back to the box, so typing goes
+  // on refining the list instead of reaching the main prompt.
+  if ((await readState($, "search")) || (await readState($, "recentView")))
+    return focusFirst($, ["filter"]);
   await focusFirst($, [path && rowKey(baseName(path)), "filter"]);
 }
 
@@ -732,7 +842,7 @@ async function openPath($: EngineInterface, path: string) {
   if (file.stat.kind === "dir") return goTo($, path);
   if (await confirmFirst($, path, file, "add")) return;
   await clearConfirm($);
-  return pick($, file.mentionPath);
+  return pickFile($, file.mentionPath);
 }
 
 // Opens a file line by line, so a range of it can be picked.
@@ -770,9 +880,11 @@ async function closeLines($: EngineInterface) {
   previewLines = undefined;
   await updateState($, "preview", () => "");
   await updateState($, "anchor", () => 0);
+  // Only the key the list draws: the engine waits a while for one it doesn't.
+  const byPath =
+    (await readState($, "search")) || (await readState($, "recentView"));
   await focusFirst($, [
-    path && rowKey(baseName(path)),
-    path && hitKey(path),
+    path && (byPath ? hitKey(path) : rowKey(baseName(path))),
     "filter",
   ]);
 }
@@ -787,7 +899,7 @@ async function pressLine($: EngineInterface, n: number) {
     return $.ui.toast(`Range starts at line ${n}: Enter on the last line`);
   }
   await updateState($, "anchor", () => 0);
-  return pick($, path, rangeOf(anchor, n));
+  return pickFile($, path, rangeOf(anchor, n));
 }
 
 async function findInLines($: EngineInterface, query: string) {
@@ -847,6 +959,7 @@ async function insertMarked($: EngineInterface) {
   const marks = await readState($, "marked");
   const cwd = await $.session.cwd();
   const mentions = new Set<string>();
+  const added: string[] = [];
   const skipped: string[] = [];
   for (const path of marks) {
     const name = displayName(baseName(path));
@@ -864,8 +977,10 @@ async function insertMarked($: EngineInterface) {
       continue;
     }
     const mention = mentionFor(file.mentionPath, cwd);
-    if (mention) mentions.add(mention);
-    else skipped.push(`${name} (name can't be mentioned safely)`);
+    if (mention) {
+      mentions.add(mention);
+      added.push(file.mentionPath);
+    } else skipped.push(`${name} (name can't be mentioned safely)`);
   }
   const skips = skipped.length ? `Skipped ${skipped.join(", ")}` : "";
   if (mentions.size === 0) {
@@ -880,6 +995,7 @@ async function insertMarked($: EngineInterface) {
   if (!filled.isFilled)
     return $.ui.toast("Could not add the marked files to the prompt");
   await updateState($, "marked", () => []);
+  await rememberRecent($, added);
   $.ui.toast(
     `Added ${mentions.size} ${mentions.size === 1 ? "file" : "files"}${skips ? `. ${skips}` : ""}`,
   );
@@ -972,6 +1088,7 @@ export const register: Register = (on) => {
     project = undefined;
     peekView = undefined;
     await updateState($, "search", () => false);
+    await updateState($, "recentView", () => false);
     await updateState($, "preview", () => "");
     await updateState($, "anchor", () => 0);
     await $.ui.open({
@@ -1182,7 +1299,12 @@ export const register: Register = (on) => {
             <Button plain hotkey="f" dimColor onPress={() => closeLines($)}>
               files
             </Button>
-            <Button plain hotkey="w" dimColor onPress={() => pick($, preview)}>
+            <Button
+              plain
+              hotkey="w"
+              dimColor
+              onPress={() => pickFile($, preview)}
+            >
               whole file
             </Button>
             {anchor > 0 && (
@@ -1295,18 +1417,27 @@ export const register: Register = (on) => {
       );
     };
 
-    if (await readState($, "search")) {
+    // Recent files draw as search results do: rows by full path, so Enter, l
+    // and m treat them alike.
+    const recentView = await readState($, "recentView");
+    if (recentView || (await readState($, "search"))) {
       // Read so the pane redraws when the walk lands.
       await readState($, "walked");
+      const recent = recentView ? await readState($, "recent") : [];
       listRows = listRoom((peekText) => [
         "l: lines",
         "f: folders",
-        `h: ${hiddenLabel}`,
+        ...(recentView ? [] : [`h: ${hiddenLabel}`]),
         `p: ${peekText}`,
         ...markLabels,
       ]);
-      const walk = project?.walk;
-      const hits = walk ? rankedHits(walk, query, showHidden) : [];
+      const walk = recentView ? undefined : project?.walk;
+      const hits = recentView
+        ? recentShown(recent, query)
+        : walk
+          ? rankedHits(walk, query, showHidden)
+          : [];
+      const total = recentView ? recent.length : walk?.hits.length;
       const offset = Math.min(
         await readState($, "offset"),
         Math.max(0, hits.length - listRows),
@@ -1331,14 +1462,14 @@ export const register: Register = (on) => {
         <Box flexDirection="column">
           <Box flexDirection="row" justifyContent="space-between">
             <Text bold color="claude" wrap="truncate-start">
-              {`search ${relative(cwd)}`}
+              {`${recentView ? "recent in" : "search"} ${relative(cwd)}`}
             </Text>
             <Text dimColor>
-              {!walk
+              {total === undefined
                 ? ""
                 : query
-                  ? `${hits.length}/${walk.hits.length}`
-                  : `${walk.hits.length}`}
+                  ? `${hits.length}/${total}`
+                  : `${total}`}
             </Text>
           </Box>
           {Input && (
@@ -1350,7 +1481,11 @@ export const register: Register = (on) => {
               <Input
                 key="filter"
                 autoFocus
-                placeholder="type a file name to search the whole project"
+                placeholder={
+                  recentView
+                    ? "type to filter recent files"
+                    : "type a file name to search the whole project"
+                }
                 value={query}
                 submitLabel="add"
                 onInput={(value: string) =>
@@ -1383,13 +1518,15 @@ export const register: Register = (on) => {
               {`↑ ${offset} more`}
             </Button>
           )}
-          {(!walk || hits.length === 0) && (
+          {(total === undefined || hits.length === 0) && (
             <Text dimColor italic>
-              {!walk
+              {total === undefined
                 ? "searching…"
                 : query
                   ? `no match for "${query}"`
-                  : "(no files)"}
+                  : recentView
+                    ? "(no recent files yet: files you add show here)"
+                    : "(no files)"}
             </Text>
           )}
           {shown.map((hit, i) => (
@@ -1448,7 +1585,7 @@ export const register: Register = (on) => {
             >
               folders
             </Button>
-            {hiddenButton}
+            {!recentView && hiddenButton}
             {peekButton}
             <Button
               key="mark"
@@ -1504,6 +1641,7 @@ export const register: Register = (on) => {
     listRows = listRoom((peekText) => [
       "l: lines",
       "s: search project",
+      "r: recent",
       "u: up",
       ...(prevDir && prevDir !== dir ? ["b: back"] : []),
       "c: cwd",
@@ -1671,6 +1809,15 @@ export const register: Register = (on) => {
             search project
           </Button>
           <Button
+            key="recent"
+            plain
+            hotkey="r"
+            dimColor
+            onPress={() => showRecent($)}
+          >
+            recent
+          </Button>
+          <Button
             plain
             hotkey="u"
             dimColor
@@ -1720,8 +1867,8 @@ export const register: Register = (on) => {
         </Box>
         {!compact && (
           <Text dimColor wrap="truncate-end">
-            ↑↓ move · Enter add/open · l lines · m mark · s search project · Esc
-            close
+            ↑↓ move · Enter add/open · l lines · m mark · s search · r recent ·
+            Esc close
           </Text>
         )}
       </Box>

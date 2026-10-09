@@ -100,13 +100,13 @@ const fortyFiles = () => {
   return files;
 };
 
-// At 88 columns the folder footer fits one row with "p: preview" and wraps
+// At 100 columns the folder footer fits one row with "p: preview" and wraps
 // with "p: hide preview"; 15 rows is too short for the preview itself, so
 // only the label takes the last row away.
 test("p whose longer label wraps the footer sends the ring to the p button", async ($, on) => {
   mock.clock(on);
   const log = wire(on, "/p", fortyFiles());
-  const ui = await mount($, 15, 88);
+  const ui = await mount($, 15, 100);
   const before = await drawnRows(ui);
   const last = before.at(-1);
   await arrowOnto($, last);
