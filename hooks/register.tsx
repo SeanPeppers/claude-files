@@ -101,8 +101,12 @@ const PEEKED_STATE = { plugin: "file-picker", key: "peeked" } as const;
 // to scroll, one that fits lets them walk the rows.
 let listRows = 10;
 let lineRows = 10;
-// The list's rows with the preview off and on, as last drawn.
-let listRowsIfPeek = { off: 10, on: 10 };
+// What the list's footer labels hang on: a press that changes one can rewrap
+// the footer and so change the list's rows.
+type Footer = { peek: boolean; hidden: boolean; marks: number };
+// The list's rows as last drawn, under a footer changed by `change`, so a
+// press knows the rows it is about to leave.
+let listRowsAfter = (_change: Partial<Footer>) => listRows;
 // The row the ring is on, so `l` knows which file to open line by line.
 let focusedKey = "";
 // The previewed file's lines, read once when the line view opens.
@@ -712,7 +716,7 @@ async function toggleHidden($: EngineInterface) {
       await ringToToggle($, ringAfterToggle(key, "", "", hiddenKey(shown)));
     return;
   }
-  const after = await placeOf($, key, listRows);
+  const after = await placeOf($, key, listRowsAfter({ hidden: shown }));
   await ringToToggle($, ringAfterToggle(key, before, after, hiddenKey(shown)));
 }
 
@@ -1062,8 +1066,7 @@ async function togglePeek($: EngineInterface) {
   const before = await placeOf($, key, listRows);
   await updateState($, "peek", (v) => !v);
   const shown = await readState($, "peek");
-  const rows = shown ? listRowsIfPeek.on : listRowsIfPeek.off;
-  const after = await placeOf($, key, rows);
+  const after = await placeOf($, key, listRowsAfter({ peek: shown }));
   await ringToToggle($, ringAfterToggle(key, before, after, peekKey(shown)));
   await schedulePeek($);
 }
@@ -1331,10 +1334,11 @@ export const register: Register = (on) => {
     const query = await readState($, "query");
     const marked = await readState($, "marked");
     const markedSet = new Set(marked);
-    const hiddenLabel = showHidden ? "hide hidden" : "hidden";
-    const markLabels = [
+    const hiddenLabelOf = (shown: boolean) =>
+      shown ? "hide hidden" : "hidden";
+    const markLabelsOf = (marks: number) => [
       "m: mark",
-      ...(marked.length > 0 ? [`i: insert ${marked.length} marked`] : []),
+      ...(marks > 0 ? [`i: insert ${marks} marked`] : []),
     ];
     const walking = (await readState($, "search")) && !project?.walk;
     const hiddenButton = (
@@ -1345,7 +1349,7 @@ export const register: Register = (on) => {
         dimColor
         onPress={() => toggleHidden($)}
       >
-        {hiddenLabel}
+        {hiddenLabelOf(showHidden)}
       </Button>
     );
     const peeking = await readState($, "peek");
@@ -1365,26 +1369,22 @@ export const register: Register = (on) => {
         {peekLabel}
       </Button>
     );
-    // The list's rows under the footer `labelsWith` draws (one row is in the
+    // The list's rows under the footer `labelsFor` draws (one row is in the
     // chrome; a narrow pane wraps more): what the pane leaves it, less the
-    // preview's share when the preview is on and fits. Worked out for the
-    // preview off and on alike, so p knows the rows it is about to leave.
-    const listRoom = (labelsWith: (peekText: string) => string[]) => {
-      const rowsWith = (shown: boolean) => {
-        const footerRows = wrappedRows(
-          labelsWith(peekLabelOf(shown)),
-          e.props.bodyColumns,
-        );
+    // preview's share when the preview is on and fits. Worked out for any
+    // footer, so p, h, m and i know the rows their press is about to leave.
+    const listRoom = (labelsFor: (footer: Footer) => string[]) => {
+      const now = { peek: peeking, hidden: showHidden, marks: marked.length };
+      const rowsWith = (footer: Footer) => {
+        const footerRows = wrappedRows(labelsFor(footer), e.props.bodyColumns);
         const room =
           e.props.scroll.bodyRows - LIST_CHROME_ROWS - (footerRows - 1) + saved;
         const fits = peekLines(room, e.props.bodyColumns, compact);
-        const peekRows = shown && fits > 0 ? fits + PEEK_CHROME_ROWS : 0;
+        const peekRows = footer.peek && fits > 0 ? fits + PEEK_CHROME_ROWS : 0;
         return { fits, rows: Math.max(1, room - peekRows) };
       };
-      const without = rowsWith(false);
-      const withPeek = rowsWith(true);
-      listRowsIfPeek = { off: without.rows, on: withPeek.rows };
-      const drawn = peeking ? withPeek : without;
+      listRowsAfter = (change) => rowsWith({ ...now, ...change }).rows;
+      const drawn = rowsWith(now);
       peekFits = drawn.fits;
       return drawn.rows;
     };
@@ -1424,12 +1424,12 @@ export const register: Register = (on) => {
       // Read so the pane redraws when the walk lands.
       await readState($, "walked");
       const recent = recentView ? await readState($, "recent") : [];
-      listRows = listRoom((peekText) => [
+      listRows = listRoom((footer) => [
         "l: lines",
         "f: folders",
-        ...(recentView ? [] : [`h: ${hiddenLabel}`]),
-        `p: ${peekText}`,
-        ...markLabels,
+        ...(recentView ? [] : [`h: ${hiddenLabelOf(footer.hidden)}`]),
+        `p: ${peekLabelOf(footer.peek)}`,
+        ...markLabelsOf(footer.marks),
       ]);
       const walk = recentView ? undefined : project?.walk;
       const hits = recentView
@@ -1638,17 +1638,17 @@ export const register: Register = (on) => {
     }
 
     // Listed in the order the buttons draw, since the order decides the wraps.
-    listRows = listRoom((peekText) => [
+    listRows = listRoom((footer) => [
       "l: lines",
       "s: search project",
       "r: recent",
       "u: up",
       ...(prevDir && prevDir !== dir ? ["b: back"] : []),
       "c: cwd",
-      `h: ${hiddenLabel}`,
-      `p: ${peekText}`,
+      `h: ${hiddenLabelOf(footer.hidden)}`,
+      `p: ${peekLabelOf(footer.peek)}`,
       "a: @ folder",
-      ...markLabels,
+      ...markLabelsOf(footer.marks),
     ]);
     const pathMode = isPathQuery(query);
     const ranked = pathMode ? [] : rankEntries(listed, query, showHidden);

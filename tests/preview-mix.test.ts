@@ -2,9 +2,9 @@ import { expect, mock, test } from "claude-code/testing";
 
 import { posix } from "./posix";
 
-// The preview against cases the other suites leave out: a p whose label alone
-// rewraps the footer, files of only blank lines or more lines than the
-// preview shows, and a filter that matches nothing.
+// The preview against cases the other suites leave out: a p, h or m whose
+// label alone rewraps the footer, files of only blank lines or more lines
+// than the preview shows, and a filter that matches nothing.
 type Files = Record<string, string>;
 
 function wire(on: any, root: string, files: Files) {
@@ -149,5 +149,24 @@ test("a filter that matches nothing drops the preview and reads nothing more", a
   expect(await ui.find({ text: /^alpha$/ })).toBeUndefined();
   expect(await ui.find({ text: /no match/ })).toBeDefined();
   expect(log.reads.map(posix)).toEqual(["/p/a.ts"]);
+  await ui.unmount();
+});
+
+// At 100 columns "h: hide hidden" wraps the folder footer as "p: hide
+// preview" does; with no dotfiles h moves no row, only the footer.
+test("h whose longer label wraps the footer sends the ring to the h button", async ($, on) => {
+  mock.clock(on);
+  const log = wire(on, "/p", fortyFiles());
+  const ui = await mount($, 30, 100);
+  const before = await drawnRows(ui);
+  const last = before.at(-1);
+  await arrowOnto($, last);
+  await ui.press({ key: "hidden" });
+  const after = await drawnRows(ui);
+  expect(after.length).toBe(before.length - 1);
+  expect(after).not.toContain(last);
+  await ui.press({ key: "mark" });
+  expect(log.toasts.at(-1)).toMatch(/Arrow onto a file first/);
+  expect(await ui.find({ key: "insert" })).toBeUndefined();
   await ui.unmount();
 });

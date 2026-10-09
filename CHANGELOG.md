@@ -31,8 +31,9 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ran past the pane and the arrows scrolled it instead of moving.
 - After `h` the highlight stayed at the same place on the screen while the
   rows moved under it, so it sat on another row while `l` and `m` answered
-  "Arrow onto a file first". When `h` moves the highlighted row, the
-  highlight now goes to the `h` button, so a second `h` undoes it; when the
+  "Arrow onto a file first". When `h` moves the highlighted row (its longer
+  label wrapping the footer can push the row out of view), the highlight
+  now goes to the `h` button, so a second `h` undoes it; when the
   row stays put, it stays on it and `l` and `m` act on it. A highlight on a
   footer or "more" button goes to the `h` button too, where before it slid
   onto whatever took its place on the screen while `l`, `m` and Enter still
