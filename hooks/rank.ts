@@ -585,12 +585,13 @@ export const gitFailNote = (exitCode: number, stderr: string) => {
 // file, so no `.gitattributes` can hand a file to a clean or process filter;
 // lazy fetch off, so a partial clone's promisor remote (and its ssh command)
 // is never reached; submodules ignored, so git starts no other git. Not
-// covered: `$GIT_DIR/info/attributes`, which nothing skips. The engine turns repository hooks off for every git it
-// runs. Porcelain paths are relative to git's work tree, so `--work-tree`
-// pins it to `root` whatever GIT_DIR, GIT_WORK_TREE or core.worktree say,
-// and the ceiling stops git from climbing past a `.git` it finds invalid into
-// an outer repository: it fails instead. `--git-dir` isn't used since an
-// explicit git dir skips git's safe.directory ownership check.
+// covered: `$GIT_DIR/info/attributes`, which nothing skips. The engine turns
+// repository hooks off for every git it runs. Porcelain paths are relative
+// to git's work tree, so `--work-tree` pins it to `root` whatever GIT_DIR,
+// GIT_WORK_TREE or core.worktree say, and the ceiling stops git from
+// climbing past a `.git` it finds invalid into an outer repository: it fails
+// instead. `--git-dir` isn't used since an explicit git dir skips git's
+// safe.directory ownership check.
 // ponytail: a parent holding the path-list separator can't be a ceiling, so
 // it's left off there; `--work-tree` still keeps every row under `root`.
 export const gitStatusCall = (root: string) => {

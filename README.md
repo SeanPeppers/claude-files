@@ -148,9 +148,9 @@ repository's changes; paths are shown relative to the repository root.
 Untracked files are listed one by one, hidden ones included; files deleted
 from the working tree are left out, since there is nothing to mention, and a
 renamed file shows under its new name. Outside a repository, or when git is
-missing, too old or fails, the pane says so. The list stops at 20,000 files (or 4 MiB
-of git output) and says which limit it hit. Press `g` again from the folder
-list to see changes made since.
+missing, too old or fails, the pane says so. The list stops at 20,000 files
+(or 4 MiB of git output) and says which limit it hit. Press `g` again from
+the folder list to see changes made since.
 
 **Lines** (after `l`)
 
@@ -214,8 +214,9 @@ The flags keep git from writing or starting anything a repository sets up:
 - `--no-optional-locks`: git doesn't write its index file.
 - `--attr-source=<empty tree>`, `core.attributesFile=` (empty) and
   `GIT_ATTR_NOSYSTEM=1`: git reads no `.gitattributes` from the working tree,
-  index or `attr.tree`, and no global or system attributes file, so no file is handed to a clean or process filter
-  (such as Git LFS, `filter.lfs.process`) or other conversion. A file that
+  index or `attr.tree`, and no global or system attributes file, so no file
+  is handed to a clean or process filter (such as Git LFS,
+  `filter.lfs.process`) or other conversion. A file that
   needs one (line endings, Git LFS) may show as `M` when its timestamps
   changed but its content didn't.
 - `--no-lazy-fetch`: a partial clone never contacts its promisor remote, so
