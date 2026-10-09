@@ -30,7 +30,9 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   system attributes file, so a repository's `.gitattributes` can't make git
   run a clean or process filter. It needs git 2.45 or newer. In a SHA-256
   repository git may stop whenever it needs attributes, and the pane says so.
-  The README's Safety section names the command in full and says what git can still run.
+  Where `.git/info/attributes` exists, which no git flag can skip, `g`
+  doesn't run git at all. The README's Safety section names the command in
+  full and says what git can still run.
   Outside a repository, or when git is missing, too old or fails, the pane
   says why.
 

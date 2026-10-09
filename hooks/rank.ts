@@ -648,6 +648,15 @@ export const ancestorsOf = (path: string) => {
 // doesn't. Either way no filter runs.
 const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
+// The git dir a `.git` file points at ("gitdir: <path>"), or "".
+export const gitDirFrom = (text: string) => {
+  const match = /^gitdir: (.+)$/m.exec(text);
+  return (match?.[1] ?? "").trim();
+};
+
+export const GIT_ATTRIBUTES_NOTE =
+  "This repository's info/attributes could start a git filter, so g stays off here";
+
 // Why `git status` gave no list, for the pane. A git too old for
 // `--no-lazy-fetch` (2.45) or `--attr-source` (2.41) stops at the unknown
 // option with exit 129 and runs nothing, which is the refusal we want.
@@ -666,7 +675,8 @@ export const gitFailNote = (exitCode: number, stderr: string) => {
 // file, so no `.gitattributes` can hand a file to a clean or process filter;
 // lazy fetch off, so a partial clone's promisor remote (and its ssh command)
 // is never reached; submodules ignored, so git starts no other git. Not
-// covered: `$GIT_DIR/info/attributes`, which nothing skips. The engine turns
+// covered by a flag: `$GIT_DIR/info/attributes`, so the pane refuses to run
+// git at all where that file exists. The engine turns
 // repository hooks off for every git it runs. Porcelain paths are relative
 // to git's work tree, so `--work-tree` pins it to `root` whatever GIT_DIR,
 // GIT_WORK_TREE or core.worktree say, and the ceiling stops git from

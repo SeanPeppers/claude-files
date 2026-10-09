@@ -243,14 +243,14 @@ The flags keep git from writing or starting anything a repository sets up:
 
 Claude Code also turns repository hooks off for every git it runs.
 
-What is still possible: git has no flag or variable that skips
-`$GIT_DIR/info/attributes` (the main repository's, for a linked worktree). If
-it assigns a filter, and your repository, global or system git config defines
-that filter's command, `git status` runs it, and it can do whatever that
-program does. Cloning writes neither that file nor any filter command into
-`.git`, so this takes someone who already wrote into your `.git` (or a
-`.git` you copied from someone else, such as from an archive) or your own
-git config. Press `g` only where you'd run `git status` yourself.
+One file git can't be told to skip: `$GIT_DIR/info/attributes` (the main
+repository's, for a linked worktree or submodule). It could assign a filter
+that your git config defines, so where that file exists `g` doesn't run git
+at all and says why. Cloning never writes it.
+
+What is still possible: git reads the repository's and your own git config,
+so anything `git status` starts that none of the settings above turn off
+would still run. Press `g` only where you'd run `git status` yourself.
 
 `g` needs git 2.45 or newer (for `--no-lazy-fetch`; `--attr-source` came in
 2.41). An older git stops at the unknown option before reading anything, and
@@ -319,7 +319,7 @@ changes what Claude or its tools do; they only add the pane.
 
 Engine calls it makes: `$.command.register` (the `/files` command),
 `$.fs.list` and `$.fs.stat` (folder listings and file types; project search is `$.fs.list` alone, one folder per call; `r` checks each recent file still exists with `$.fs.stat`; `g` also stats `.git` in the working directory and each folder above it to find the repository root),
-`$.process.run` (only the one `git status` command above, only when you press `g`; its flags and `GIT_ATTR_NOSYSTEM` keep `.gitattributes` and the global and system attributes files from starting filters; `.git/info/attributes` still can, as Safety explains),
+`$.process.run` (only the one `git status` command above, only when you press `g`; its flags and `GIT_ATTR_NOSYSTEM` keep `.gitattributes` and the global and system attributes files from starting filters; and it won't run at all where `.git/info/attributes` exists, as Safety explains),
 `$.fs.read` (the file you press `l` on, up to 4 MiB, and with the preview on,
 the highlighted file, up to 64 KiB), `$.clock.after` (waits 120 ms for the
 arrows to rest before the preview reads),

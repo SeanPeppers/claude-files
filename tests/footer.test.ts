@@ -54,9 +54,12 @@ for (const [COLUMNS, BODY_ROWS] of [
     on("fs.read", () => ({
       value: Array.from({ length: 80 }, (_, i) => `line ${i + 1}`).join("\n"),
     }));
-    on("fs.stat", () => ({
-      value: { kind: "file", size: 1, mtimeMs: 0, isLink: false },
-    }));
+    on("fs.stat", (_: any, e: any) => {
+      const path = posix(e.path) ?? "";
+      if (path.endsWith("/info/attributes")) throw new Error("ENOENT");
+      const kind = path.endsWith("/.git") ? "dir" : "file";
+      return { value: { kind, size: 1, mtimeMs: 0, isLink: false } };
+    });
     on("process.run", () => ({
       value: {
         exitCode: 0,

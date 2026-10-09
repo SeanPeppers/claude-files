@@ -7,6 +7,8 @@ import {
   findLine,
   fitCells,
   fitCellsStart,
+  GIT_ATTRIBUTES_NOTE,
+  gitDirFrom,
   gitFailNote,
   gitStatusCall,
   headLines,
@@ -504,6 +506,7 @@ async function walkCwd($: EngineInterface) {
   const root = await $.session.cwd();
   const current: Project = {};
   project = current;
+  const markerKind = "";
   focusedKey = "";
   // A walk superseded by a later one (f, h, reopening) stops listing.
   const walk = await walkProject(root, (dir) => $.fs.list(dir), showHidden, {
@@ -517,22 +520,65 @@ async function walkCwd($: EngineInterface) {
 // Lists git's changed and untracked files in place of a project walk. The
 // repository root is found by looking for `.git` above the working directory,
 // and git is pinned to it (see gitStatusCall), so no second git command runs.
+// Where git reads `info/attributes`, which no flag skips: the repository's
+// common git dir. A `.git` file (a linked worktree or submodule) names its
+// git dir, and that dir's `commondir` names the shared one. "" when the
+// `.git` file can't be read, so the caller refuses rather than guesses.
+// Why `g` won't run git in `root`, or "" when it may: an
+// `info/attributes` file could hand a file to a filter that git would start.
+async function gitRefusal(
+  $: EngineInterface,
+  root: string,
+  markerKind: string,
+) {
+  const attributes = await attributesFileOf($, root, markerKind);
+  if (!attributes) return "Couldn't read this repository's .git file";
+  const found = await $.fs.stat(attributes).catch(() => undefined);
+  if (found) return GIT_ATTRIBUTES_NOTE;
+  return "";
+}
+
+async function attributesFileOf(
+  $: EngineInterface,
+  root: string,
+  markerKind: string,
+) {
+  const marker = joinPath(root, ".git");
+  let gitDir = marker;
+  if (markerKind === "file") {
+    const pointer = await $.fs.read(marker).catch(() => "");
+    const named = gitDirFrom(pointer);
+    if (!named) return "";
+    gitDir = resolveTyped(root, named);
+    const common = await $.fs
+      .read(joinPath(gitDir, "commondir"))
+      .catch(() => "");
+    if (common.trim()) gitDir = resolveTyped(gitDir, common.trim());
+  }
+  return joinPath(joinPath(gitDir, "info"), "attributes");
+}
+
 async function gitCwd($: EngineInterface) {
   const cwd = await $.session.cwd();
   const current: Project = {};
   project = current;
   focusedKey = "";
+  let markerKind = "";
   for (const dir of ancestorsOf(cwd)) {
     const marker = joinPath(dir, ".git");
     const found = await $.fs.stat(marker).catch(() => undefined);
     if (found) {
       current.root = dir;
+      markerKind = found.kind;
       break;
     }
   }
   const root = current.root;
   if (!root) current.note = "Not inside a git repository";
   else {
+    current.note = await gitRefusal($, root, markerKind);
+  }
+  if (root && !current.note) {
     const { argv, init } = gitStatusCall(root);
     try {
       const ran = await $.process.run(argv, init);

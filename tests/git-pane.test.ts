@@ -20,6 +20,9 @@ type Opts = {
   hold?: () => Promise<void>;
   dirs?: string[];
   links?: Record<string, string>;
+  attributes?: string;
+  pointer?: string;
+  commondir?: string;
 };
 
 function wire(
@@ -36,6 +39,9 @@ function wire(
     hold,
     dirs = [],
     links = {},
+    attributes,
+    pointer = "gitdir: /p/.git-dir\n",
+    commondir,
   }: Opts = {},
 ) {
   const log = {
@@ -69,6 +75,8 @@ function wire(
     if (path === cwd || path === "/p" || dirs.includes(path))
       return { value: { kind: "dir", size: 0, mtimeMs: 0, isLink: false } };
     if (path.endsWith(".git")) throw new Error("ENOENT");
+    if (path.endsWith("/info/attributes") && path !== attributes)
+      throw new Error("ENOENT");
     const real = links[path];
     return {
       value: {
@@ -104,7 +112,18 @@ function wire(
       },
     };
   });
-  on("fs.read", () => ({ value: "one\ntwo\nthree\n" }));
+  on("fs.read", (_: any, e: any) => {
+    const path = posix(e.path) ?? "";
+    if (path === gitAt) {
+      if (!pointer) throw new Error("EACCES");
+      return { value: pointer };
+    }
+    if (path.endsWith("/commondir")) {
+      if (!commondir) throw new Error("ENOENT");
+      return { value: commondir };
+    }
+    return { value: "one\ntwo\nthree\n" };
+  });
   on("ui.focus", () => ({ value: {} }));
   on("ui.open", () => ({ value: undefined }));
   on("ui.toast", (_: any, e: any) => {
@@ -776,5 +795,43 @@ test("the recent view offers no g; the folder list does", async ($, on) => {
   await ui.press({ key: "recent" });
   expect(await until(ui, { text: /recent in/ })).toBe(true);
   expect(await ui.find({ key: "changes" })).toBeUndefined();
+  await ui.unmount();
+});
+
+test("an info/attributes file keeps g from running git at all", async ($, on) => {
+  const log = wire(on, { attributes: "/p/.git/info/attributes" });
+  const ui = await mount($);
+  await ui.press({ key: "changes" });
+  expect(
+    await until(ui, { text: /info\/attributes could start a git filter/ }),
+  ).toBe(true);
+  expect(log.runs).toEqual([]);
+  await ui.unmount();
+});
+
+test("a linked worktree is checked for info/attributes in the shared git dir", async ($, on) => {
+  const log = wire(on, {
+    gitKind: "file",
+    pointer: "gitdir: /main/.git/worktrees/p\n",
+    commondir: "../..\n",
+    attributes: "/main/.git/info/attributes",
+  });
+  const ui = await mount($);
+  await ui.press({ key: "changes" });
+  expect(
+    await until(ui, { text: /info\/attributes could start a git filter/ }),
+  ).toBe(true);
+  expect(log.runs).toEqual([]);
+  await ui.unmount();
+});
+
+test("a .git file that can't be read keeps g from running git", async ($, on) => {
+  const log = wire(on, { gitKind: "file", pointer: "" });
+  const ui = await mount($);
+  await ui.press({ key: "changes" });
+  expect(
+    await until(ui, { text: "Couldn't read this repository's .git file" }),
+  ).toBe(true);
+  expect(log.runs).toEqual([]);
   await ui.unmount();
 });
