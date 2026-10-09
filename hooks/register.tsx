@@ -1,11 +1,17 @@
 import type { EngineInterface, PluginState, Register } from "claude-code";
 import type { Entry, Hit, LineRange, Walk } from "./rank";
 import {
+  ancestorsOf,
   baseName,
+  commonDirFrom,
   displayName,
   findLine,
   fitCells,
   fitCellsStart,
+  GIT_ATTRIBUTES_NOTE,
+  gitCommonDirCall,
+  gitFailNote,
+  gitStatusCall,
   headLines,
   humanSize,
   isBinaryText,
@@ -24,6 +30,7 @@ import {
   PEEK_MAX_BYTES,
   PEEK_MAX_LINES,
   parentOf,
+  parseGitStatus,
   peekLines,
   previewLine,
   rangeLabel,
@@ -105,6 +112,8 @@ const RECENT_STORE = "recent";
 // preview read lands, so the pane redraws.
 const PEEK_STATE = { plugin: "file-picker", key: "peek" } as const;
 const PEEKED_STATE = { plugin: "file-picker", key: "peeked" } as const;
+// Whether that list is git's changed files instead of the whole project.
+const CHANGES_STATE = { plugin: "file-picker", key: "changes" } as const;
 
 // Rows of the list or of the file that fit in the pane, as last drawn. Both
 // are drawn a window at a time: a pane taller than its tree takes the arrows
@@ -170,6 +179,7 @@ const INITIAL: State = {
   recent: [] as State["recent"],
   peek: false,
   peeked: 0,
+  changes: false,
 };
 
 // The plugin directory lets `$` go only to functions declared in this file,
@@ -310,6 +320,13 @@ async function heldState<K extends keyof State>(
       const held = await $.state.get(PEEKED_STATE);
       return {
         value: (held.value ?? INITIAL.peeked) as State[K],
+        version: held.version,
+      };
+    }
+    case "changes": {
+      const held = await $.state.get(CHANGES_STATE);
+      return {
+        value: (held.value ?? INITIAL.changes) as State[K],
         version: held.version,
       };
     }
@@ -457,6 +474,13 @@ async function writeState<K extends keyof State>(
       });
       return done.isSet;
     }
+    case "changes": {
+      const next = value as State["changes"];
+      const done = await $.state.set(CHANGES_STATE, next, {
+        ifVersion: version,
+      });
+      return done.isSet;
+    }
   }
   throw new Error(`unknown state ${key}`);
 }
@@ -502,7 +526,10 @@ async function listDir($: EngineInterface, dir: string) {
 // The project's files, walked once when search starts (or hidden files are
 // toggled during it), and the last ranking of them: ranking 20,000 paths on
 // every redraw would lag typing.
-let project: { walk?: Walk } | undefined;
+// For git's changed files, `root` is the repository's and `note` says why
+// there's no list.
+type Project = { walk?: Walk; root?: string; note?: string };
+let project: Project | undefined;
 let ranking:
   | { walk: Walk; query: string; hidden: boolean; hits: Hit[] }
   | undefined;
@@ -523,7 +550,7 @@ function rankedHits(walk: Walk, query: string, hidden: boolean) {
 async function walkCwd($: EngineInterface) {
   const showHidden = await readState($, "showHidden");
   const root = await $.session.cwd();
-  const current: { walk?: Walk } = {};
+  const current: Project = {};
   project = current;
   focusedKey = "";
   // A walk superseded by a later one (f, h, reopening) stops listing.
@@ -536,14 +563,80 @@ async function walkCwd($: EngineInterface) {
   return true;
 }
 
-async function setSearch($: EngineInterface, enabled: boolean) {
+// Why `g` won't run git status in `root`, or "" when it may. No git flag
+// skips `info/attributes` in the git dir, and it could hand a file to a filter
+// that status would start, so git is asked which dir it uses and the plugin
+// refuses where that dir holds the file.
+async function gitRefusal($: EngineInterface, root: string) {
+  const { argv, init } = gitCommonDirCall(root);
+  try {
+    const ran = await $.process.run(argv, init);
+    if (ran.exitCode !== 0) return gitFailNote(ran.exitCode, ran.stderr);
+    const common = commonDirFrom(ran.stdout);
+    if (!common) return "git didn't say which folder it uses";
+    // Fails closed: a folder the plugin can't see as git named it is refused.
+    const commonStat = await $.fs.stat(common);
+    if (commonStat.kind !== "dir")
+      return "git named a git folder that isn't one";
+    const attributes = joinPath(joinPath(common, "info"), "attributes");
+    if (await $.fs.exists(attributes)) return GIT_ATTRIBUTES_NOTE;
+    return "";
+  } catch (err) {
+    return `Couldn't run git: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
+// Lists git's changed and untracked files in place of a project walk. The
+// repository root is found by looking for `.git` above the working directory,
+// and git is pinned to it (see gitStatusCall).
+async function gitCwd($: EngineInterface) {
+  const cwd = await $.session.cwd();
+  const current: Project = {};
+  project = current;
+  focusedKey = "";
+  for (const dir of ancestorsOf(cwd)) {
+    const marker = joinPath(dir, ".git");
+    const found = await $.fs.stat(marker).catch(() => undefined);
+    if (found) {
+      current.root = dir;
+      break;
+    }
+  }
+  const root = current.root;
+  if (!root) current.note = "Not inside a git repository";
+  else {
+    current.note = await gitRefusal($, root);
+  }
+  if (root && !current.note) {
+    const { argv, init } = gitStatusCall(root);
+    try {
+      const ran = await $.process.run(argv, init);
+      if (ran.exitCode === 0)
+        current.walk = parseGitStatus(root, ran.stdout, ran.isStdoutTruncated);
+      else current.note = gitFailNote(ran.exitCode, ran.stderr);
+    } catch (err) {
+      current.note = `Couldn't run git: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  }
+  if (project !== current) return;
+  await updateState($, "walked", (n) => n + 1);
+}
+
+// `changes`: the list is git's changed files rather than the project walk.
+async function setSearch(
+  $: EngineInterface,
+  enabled: boolean,
+  changes = false,
+) {
   project = undefined;
   focusedKey = "";
   await updateState($, "recentView", () => false);
   await updateState($, "search", () => enabled);
+  await updateState($, "changes", () => enabled && changes);
   await updateState($, "query", () => "");
   await updateState($, "offset", () => 0);
-  if (enabled) void walkCwd($).catch(() => undefined);
+  if (enabled && changes) void gitCwd($).catch(() => undefined);
+  else if (enabled) void walkCwd($).catch(() => undefined);
   await focusFirst($, ["filter"]);
 }
 
@@ -702,7 +795,9 @@ async function listKeys($: EngineInterface) {
   if (await readState($, "search")) {
     const walk = project?.walk;
     if (!walk) return [];
-    const hidden = await readState($, "showHidden");
+    // Every changed file shows, hidden or not: git named it.
+    const hidden =
+      (await readState($, "changes")) || (await readState($, "showHidden"));
     return rankedHits(walk, query, hidden).map((hit) => hitKey(hit.path));
   }
   const ranked = await rankedIn($, await currentDir($), query);
@@ -1629,19 +1724,24 @@ export const register: Register = (on) => {
     if (recentView || (await readState($, "search"))) {
       // Read so the pane redraws when the walk lands.
       await readState($, "walked");
+      const changes = await readState($, "changes");
       const recent = recentView ? await readState($, "recent") : [];
       listRows = listRoom((footer) => [
         "l: lines",
         "f: folders",
-        ...(recentView ? [] : [`h: ${hiddenLabelOf(footer.hidden)}`]),
+        ...(recentView || changes
+          ? []
+          : [`h: ${hiddenLabelOf(footer.hidden)}`]),
         `p: ${peekLabelOf(footer.peek)}`,
         ...markLabelsOf(footer.marks),
       ]);
       const walk = recentView ? undefined : project?.walk;
+      const note = recentView ? undefined : project?.note;
+      // Every changed file shows, hidden or not: git named it.
       const hits = recentView
         ? recentShown(recent, query)
         : walk
-          ? rankedHits(walk, query, showHidden)
+          ? rankedHits(walk, query, changes || showHidden)
           : [];
       const total = recentView ? recent.length : walk?.hits.length;
       const offset = Math.min(
@@ -1660,6 +1760,7 @@ export const register: Register = (on) => {
         );
       const caps = [
         walk?.capped && `first ${WALK_MAX_FILES.toLocaleString("en-US")} files`,
+        walk?.cut && "git output cut at 4 MiB",
         walk?.foldersCapped &&
           `first ${WALK_MAX_FOLDERS.toLocaleString("en-US")} folders`,
         walk?.deep && `folders over ${WALK_MAX_DEPTH} levels deep skipped`,
@@ -1668,7 +1769,11 @@ export const register: Register = (on) => {
         <Box flexDirection="column">
           <Box flexDirection="row" justifyContent="space-between">
             <Text bold color="claude" wrap="truncate-start">
-              {`${recentView ? "recent in" : "search"} ${relative(cwd)}`}
+              {recentView
+                ? `recent in ${relative(cwd)}`
+                : changes
+                  ? `changes ${relative(project?.root || cwd)}`
+                  : `search ${relative(cwd)}`}
             </Text>
             <Text dimColor>
               {total === undefined
@@ -1690,7 +1795,9 @@ export const register: Register = (on) => {
                 placeholder={
                   recentView
                     ? "type to filter recent files"
-                    : "type a file name to search the whole project"
+                    : changes
+                      ? "type to filter the changed files"
+                      : "type a file name to search the whole project"
                 }
                 value={query}
                 submitLabel="add"
@@ -1724,15 +1831,24 @@ export const register: Register = (on) => {
               {`↑ ${offset} more`}
             </Button>
           )}
-          {(total === undefined || hits.length === 0) && (
+          {note && (
+            <Text color="warning" wrap="truncate-end">
+              {displayName(note)}
+            </Text>
+          )}
+          {!note && (total === undefined || hits.length === 0) && (
             <Text dimColor italic>
               {total === undefined
-                ? "searching…"
+                ? changes
+                  ? "reading git status…"
+                  : "searching…"
                 : query
                   ? `no match for "${query}"`
                   : recentView
                     ? "(no recent files yet: files you add show here)"
-                    : "(no files)"}
+                    : changes
+                      ? "(no changes)"
+                      : "(no files)"}
             </Text>
           )}
           {shown.map((hit, i) => (
@@ -1753,7 +1869,11 @@ export const register: Register = (on) => {
                   Math.max(10, e.props.bodyColumns - 8),
                 )}
               </Button>
-              {!hit.isLink && <Text dimColor>{humanSize(hit.size)}</Text>}
+              {hit.status ? (
+                <Text dimColor>{hit.status}</Text>
+              ) : (
+                !hit.isLink && <Text dimColor>{humanSize(hit.size)}</Text>
+              )}
             </Box>
           ))}
           {below > 0 && (
@@ -1791,7 +1911,7 @@ export const register: Register = (on) => {
             >
               folders
             </Button>
-            {!recentView && hiddenButton}
+            {!recentView && !changes && hiddenButton}
             {peekButton}
             <Button
               key={markAgain ? MARK_AGAIN : "mark"}
@@ -1846,8 +1966,9 @@ export const register: Register = (on) => {
     // Listed in the order the buttons draw, since the order decides the wraps.
     listRows = listRoom((footer) => [
       "l: lines",
-      "s: search project",
+      "s: search",
       "r: recent",
+      "g: git",
       "u: up",
       ...(prevDir && prevDir !== dir ? ["b: back"] : []),
       "c: cwd",
@@ -2012,7 +2133,7 @@ export const register: Register = (on) => {
             dimColor
             onPress={() => setSearch($, true)}
           >
-            search project
+            search
           </Button>
           <Button
             key="recent"
@@ -2022,6 +2143,15 @@ export const register: Register = (on) => {
             onPress={() => showRecent($)}
           >
             recent
+          </Button>
+          <Button
+            key="changes"
+            plain
+            hotkey="g"
+            dimColor
+            onPress={() => setSearch($, true, true)}
+          >
+            git
           </Button>
           <Button
             plain

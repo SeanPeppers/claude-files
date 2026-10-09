@@ -118,6 +118,7 @@ To update later: `claude plugin update file-picker@claude-files`.
 | `s` | search the whole project (see below) |
 | `r` | show the files you added here before (see below) |
 | `p` | show or hide a preview of the highlighted file under the list: its first lines, once the arrows rest on it. Off until you press it, then on until the session ends. Secrets files, binary files, links that lead out of the project and files over 64 KiB get a one-line notice instead |
+| `g` | list the files git sees as changed or untracked (see below) |
 | `Esc` | close the pane |
 
 **Project search** (after `s`)
@@ -150,6 +151,24 @@ Enter, `w`, a line range or `i`) are kept in the plugin's own store, so they
 are still there in the next session. Files deleted or moved since drop out of
 the list. Each project keeps its own list; the 50 most recently used projects
 are kept. A secrets file in the list still needs its second yes.
+
+**Git changes** (after `g`)
+
+| Key | Does |
+|---|---|
+| type | filter the changed files, ranked as in project search; each row shows git's status (`M` modified, `A` added, `R` renamed, `??` untracked, `UU` conflicted) |
+| `Enter` / `l` / `m` | add the file, pick its lines or mark it, exactly as in a folder |
+| `f` | back to the folder list |
+
+`g` runs `git status` once (see [Safety](#safety)) from the repository that
+holds the working directory, so from a subfolder it lists the whole
+repository's changes; paths are shown relative to the repository root.
+Untracked files are listed one by one, hidden ones included; files deleted
+from the working tree are left out, since there is nothing to mention, and a
+renamed file shows under its new name. Outside a repository, or when git is
+missing, too old or fails, the pane says so. The list stops at 20,000 files
+(or 4 MiB of git output) and says which limit it hit. Press `g` again from
+the folder list to see changes made since.
 
 **Lines** (after `l`)
 
@@ -208,10 +227,68 @@ the list), and inserts text into your prompt. The preview is off until you press
 even one you said yes to) or a link that leads out of the project. What it shows
 stays on your screen: nothing it reads goes into the prompt. What it
 remembers for the session (the folder, the filter, the marked files, the kept
-line ranges) is the pane's own state, never file contents. It
-never writes your files, runs commands or touches the network, never reads your
-Claude Code settings, and nothing is sent until you press Enter on the prompt
-yourself.
+line ranges) is the pane's own state, never file contents. When you press `g`
+it runs two read-only git commands, in the repository root, with no shell.
+First it asks git which git folder it uses:
+
+```
+git --no-optional-locks --no-lazy-fetch --attr-source=4b825dc642cb6eb9a060e54bf8d69288fbee4904 -c core.attributesFile= -c core.fsmonitor=false -c core.untrackedCache=false --work-tree=<repository root> rev-parse --path-format=absolute --git-common-dir
+```
+
+then, unless that folder holds `info/attributes` (below), lists the changes:
+
+```
+git --no-optional-locks --no-lazy-fetch --attr-source=4b825dc642cb6eb9a060e54bf8d69288fbee4904 -c core.attributesFile= -c core.fsmonitor=false -c core.untrackedCache=false --work-tree=<repository root> status --porcelain=v1 -z --untracked-files=all --ignore-submodules=all
+```
+
+Both run with `GIT_CEILING_DIRECTORIES` set to the folder above the repository root, so
+the paths git prints always belong to the root the plugin found: a broken
+`.git` there makes git fail (and the pane say so) instead of reporting an
+outer repository's paths, and `GIT_ATTR_NOSYSTEM=1`, so git skips the system
+attributes file. Both variables are only set for git, never read.
+
+The flags keep git from writing or starting anything a repository sets up:
+
+- `--no-optional-locks`: git doesn't write its index file.
+- `--attr-source=<empty tree>`, `core.attributesFile=` (empty) and
+  `GIT_ATTR_NOSYSTEM=1`: git reads no `.gitattributes` from the working tree,
+  index or `attr.tree`, and no global or system attributes file, so no file
+  is handed to a clean or process filter (such as Git LFS,
+  `filter.lfs.process`) or other conversion. A file that
+  needs one (line endings, Git LFS) may show as `M` when its timestamps
+  changed but its content didn't.
+- `--no-lazy-fetch`: a partial clone never contacts its promisor remote, so
+  git starts no ssh or other transport and makes no network request.
+- `core.fsmonitor=false`: git starts no file-system monitor.
+- `core.untrackedCache=false`: git neither reads nor updates the untracked
+  cache.
+- `--ignore-submodules=all`: git doesn't run itself inside submodules.
+
+Claude Code also turns repository hooks off for every git it runs.
+
+One file git can't be told to skip: `info/attributes` in the git folder (the
+main repository's, for a linked worktree or submodule). It could assign a
+filter that a git config defines, and `git status` would start it. So the
+plugin asks git itself which folder it uses (the `rev-parse` above, which
+reads no attributes and starts no filter) rather than guessing, and where
+that folder holds the file, `status` doesn't run and the pane says why.
+Cloning never writes it.
+
+What is still possible: git reads the repository's and your own git config,
+so anything `git status` starts that none of the settings above turn off
+would still run. Press `g` only where you'd run `git status` yourself.
+
+`g` needs git 2.45 or newer (for `--no-lazy-fetch`; `--attr-source` came in
+2.41). An older git stops at the unknown option before reading anything, and
+the pane says a newer git is needed. In a SHA-256 repository git can't use
+the SHA-1 empty tree, so it may refuse whenever it needs attributes, which is
+when it has to re-read a file whose timestamps changed but size didn't. Then
+the pane says git can't skip the repository's filters; otherwise it lists
+the changes. Either way no filter runs.
+
+Apart from those two git commands, the plugin runs nothing, never writes your
+files or touches the network, never reads your Claude Code settings, and
+nothing is sent until you press Enter on the prompt yourself.
 
 **What it stores.** The full paths of the last 10 files you added to the
 prompt, per working directory (for `r`), secrets files included, and nothing
@@ -263,21 +340,23 @@ changes what Claude or its tools do; they only add the pane.
 |---|---|
 | `session.start` | registers the `/files` command |
 | `command.run` (`/files` only) | opens the Files pane with an empty filter. It is matched to the `/files` command, so it never sees or changes any other command |
-| `ui.render` (the Files pane) | draws the folder list, the project search, the recent files, the line view (with any kept ranges) or the secrets confirmation |
+| `ui.render` (the Files pane) | draws the folder list, the project search, the recent files, the git changes list, the line view (with any kept ranges) or the secrets confirmation |
 | `ui.focus` (the Files pane) | remembers the highlighted row for `l`, `m` and the preview, and when the arrows reach a `↑/↓ N more` row, slides the list one row. With the preview on, it starts a short timer whose end reads the highlighted file |
 
 Engine calls it makes: `$.command.register` (the `/files` command),
-`$.fs.list` and `$.fs.stat` (folder listings and file types; project search is `$.fs.list` alone, one folder per call; `r` checks each recent file still exists with `$.fs.stat`),
+`$.fs.list` and `$.fs.stat` (folder listings and file types; project search is `$.fs.list` alone, one folder per call; `r` checks each recent file still exists with `$.fs.stat`; `g` also stats `.git` in the working directory and each folder above it to find the repository root, then stats the git folder `git rev-parse` names), `$.fs.exists` (`g` checking that folder for `info/attributes`),
+`$.process.run` (only the two git commands above, only when you press `g`; their flags and `GIT_ATTR_NOSYSTEM` keep `.gitattributes` and the global and system attributes files from starting filters, and `status` doesn't run where the git folder holds `info/attributes`, as Safety explains),
 `$.fs.read` (the file you press `l` on, up to 4 MiB, and with the preview on,
 the highlighted file, up to 64 KiB), `$.clock.after` (waits 120 ms for the
 arrows to rest before the preview reads),
 `$.prompt.fill` (insert the mention), `$.session.cwd`, `$.ui.*` (pane, focus,
 toasts), `$.store` (the recent files, kept between sessions: read when
 you press `r` or add a file, written when you add a file or one has gone) and `$.state` (the pane's own session state: folder, filter, scroll
-position, search or recent mode, the open file, the range start, the kept line
-ranges, the marked files, the recent files as last checked and whether the preview is on). It
+position, search, recent or changes mode, the open file, the range start,
+the kept line ranges, the marked files, the recent files as last checked and
+whether the preview is on). It
 reads no environment variables, tokens or Claude Code settings, and it makes
-no network requests: `claude plugin validate` shows no `env reads:` line and no
+no network requests (`git status` runs with lazy fetch off, so it reads only local files): `claude plugin validate` shows no `env reads:` line and no
 network calls. The list of secrets file names under [Safety](#safety) is used
 only to ask before such a file goes into the prompt.
 
@@ -315,7 +394,7 @@ Dependabot keeps the pinned actions current.
 | File | What |
 |---|---|
 | `hooks/register.tsx` | `/files`, the pane, the line view, focus handling, picking |
-| `hooks/rank.ts` | pure helpers: ranking, the project walk, paths, mentions, secrets check, the list window, the recent list |
+| `hooks/rank.ts` | pure helpers: ranking, the project walk, `git status` parsing, paths, mentions, secrets check, the list window, the recent list |
 | `types/index.d.ts` | the session state the pane keeps |
 | `tests/` | unit, hardening (hostile names, Windows paths), line view, project search, recent files and UI tests |
 | `CHANGELOG.md` | what changed in each version |

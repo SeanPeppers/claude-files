@@ -36,7 +36,7 @@ for (const [COLUMNS, BODY_ROWS] of [
   [39, 11],
   [90, 11],
 ] as const)
-  test(`list, search, recent and lines stay within ${BODY_ROWS} rows at ${COLUMNS} columns`, async ($, on) => {
+  test(`list, search, recent, changes and lines stay within ${BODY_ROWS} rows at ${COLUMNS} columns`, async ($, on) => {
     const clock = mock.clock(on);
     mock.store(on, {
       recent: { "/p": NAMES.slice(0, 10).map((name) => `/p/${name}`) },
@@ -58,8 +58,29 @@ for (const [COLUMNS, BODY_ROWS] of [
     on("fs.read", () => ({
       value: Array.from({ length: 80 }, (_, i) => `line ${i + 1}`).join("\n"),
     }));
-    on("fs.stat", () => ({
-      value: { kind: "file", size: 1, mtimeMs: 0, isLink: false },
+    on("fs.stat", (_: any, e: any) => {
+      const path = posix(e.path) ?? "";
+      if (path.endsWith("/info/attributes")) throw new Error("ENOENT");
+      const kind = path.endsWith("/.git") ? "dir" : "file";
+      return { value: { kind, size: 1, mtimeMs: 0, isLink: false } };
+    });
+    on("fs.exists", () => ({ value: false }));
+    on("process.run", (_: any, e: any) => ({
+      value: e.argv.includes("rev-parse")
+        ? {
+            exitCode: 0,
+            stdout: "/p/.git\n",
+            stderr: "",
+            isStdoutTruncated: false,
+            isStderrTruncated: false,
+          }
+        : {
+            exitCode: 0,
+            stdout: NAMES.map((name) => `?? ${name}\0`).join(""),
+            stderr: "",
+            isStdoutTruncated: false,
+            isStderrTruncated: false,
+          },
     }));
     on("ui.focus", () => ({}));
     on("ui.toast", () => ({ value: undefined }));
@@ -130,6 +151,16 @@ for (const [COLUMNS, BODY_ROWS] of [
     await ui.press({ key: "folders" });
     await ui.press({ key: "recent" });
     expect(await ui.find({ key: "hit:/p/f00.ts" })).toBeDefined();
+    await ui.press({ key: "more:below" });
+    expect(await ui.find({ key: "more:above" })).toBeDefined();
+    expect(heightOf(await ui.drawn(), COLUMNS)).toBeLessThanOrEqual(BODY_ROWS);
+
+    await ui.press({ key: "folders" });
+    await ui.press({ key: "changes" });
+    landed = false;
+    for (let i = 0; i < 200 && !landed; i++)
+      landed = (await ui.find({ key: "hit:/p/f00.ts" })) !== undefined;
+    expect(landed).toBe(true);
     await ui.press({ key: "more:below" });
     expect(await ui.find({ key: "more:above" })).toBeDefined();
     expect(heightOf(await ui.drawn(), COLUMNS)).toBeLessThanOrEqual(BODY_ROWS);

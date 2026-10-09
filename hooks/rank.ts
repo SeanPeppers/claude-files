@@ -412,6 +412,8 @@ export type Hit = {
   name: string;
   size: number;
   isLink?: boolean;
+  // Git's status letters (`M`, `??`, `R`) for a changed file.
+  status?: string;
 };
 
 // Folders a project search never walks into: version control, dependencies,
@@ -438,6 +440,8 @@ export type Walk = {
   capped: boolean;
   deep: boolean;
   foldersCapped: boolean;
+  // Git's output ran past the engine's 4 MiB limit and was cut there.
+  cut?: boolean;
 };
 
 // Lists `root` and its subfolders breadth first, one folder per `list` call.
@@ -656,6 +660,137 @@ export const headLines = (text: string, count: number) => {
     from = end + 1;
   }
   return lines;
+};
+
+// `path` and every folder above it, nearest first, ending at its root.
+export const ancestorsOf = (path: string) => {
+  const out = [path];
+  for (let dir = path; !isRoot(dir) && parentOf(dir) !== dir; ) {
+    dir = parentOf(dir);
+    if (!dir) break;
+    out.push(dir);
+  }
+  return out;
+};
+
+// Git's well-known empty tree. It's SHA-1, so in a SHA-256 repository git
+// fails with "bad --attr-source" whenever it needs attributes (to re-read a
+// file whose timestamps changed but size didn't) and lists normally when it
+// doesn't. Either way no filter runs.
+const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
+export const GIT_ATTRIBUTES_NOTE =
+  "This repository's info/attributes could start a git filter, so g stays off here";
+
+// Why `git status` gave no list, for the pane. A git too old for
+// `--no-lazy-fetch` (2.45) or `--attr-source` (2.41) stops at the unknown
+// option with exit 129 and runs nothing, which is the refusal we want.
+export const gitFailNote = (exitCode: number, stderr: string) => {
+  if (exitCode === 129 && stderr.includes("unknown option"))
+    return "git 2.45 or newer is needed to keep repository filters from running";
+  if (stderr.includes("bad --attr-source"))
+    return "git can't skip this SHA-256 repository's filters";
+  return `git status failed: ${stderr.trim().split("\n")[0] || `exit ${exitCode}`}`;
+};
+
+// The status command the plugin runs, from the repository `root` found by its
+// `.git`. Optional locks off, so status doesn't write the index. Nothing a
+// repository's files or config set up may start a program: fsmonitor off;
+// attributes read from the empty tree and no global or system attributes
+// file, so no `.gitattributes` can hand a file to a clean or process filter;
+// lazy fetch off, so a partial clone's promisor remote (and its ssh command)
+// is never reached; submodules ignored, so git starts no other git. Not
+// covered by a flag: `$GIT_DIR/info/attributes`, so the pane asks git for that
+// dir first (gitCommonDirCall) and runs no status where the file exists. The
+// engine turns
+// repository hooks off for every git it runs. Porcelain paths are relative
+// to git's work tree, so `--work-tree` pins it to `root` whatever GIT_DIR,
+// GIT_WORK_TREE or core.worktree say, and the ceiling stops git from
+// climbing past a `.git` it finds invalid into an outer repository: it fails
+// instead. `--git-dir` isn't used since an explicit git dir skips git's
+// safe.directory ownership check.
+// ponytail: a parent holding the path-list separator can't be a ceiling, so
+// it's left off there; `--work-tree` still keeps every row under `root`.
+const gitCall = (root: string, command: string[]) => {
+  const argv = [
+    "git",
+    "--no-optional-locks",
+    "--no-lazy-fetch",
+    `--attr-source=${EMPTY_TREE}`,
+    "-c",
+    "core.attributesFile=",
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "core.untrackedCache=false",
+    `--work-tree=${root}`,
+    ...command,
+  ];
+  const ceiling = isRoot(root) ? "" : parentOf(root);
+  const listSep = isWindowsPath(root) ? ";" : ":";
+  const env: Record<string, string> = { GIT_ATTR_NOSYSTEM: "1" };
+  if (ceiling && !ceiling.includes(listSep))
+    env.GIT_CEILING_DIRECTORIES = ceiling;
+  return { argv, init: { cwd: root, env } };
+};
+
+export const gitStatusCall = (root: string) =>
+  gitCall(root, [
+    "status",
+    "--porcelain=v1",
+    "-z",
+    "--untracked-files=all",
+    "--ignore-submodules=all",
+  ]);
+
+// Asks git, with the same flags, which git dir it would use for `root`:
+// rev-parse reads no index and starts no filter. The plugin checks that dir
+// for `info/attributes` itself rather than copying git's rules for finding it.
+export const gitCommonDirCall = (root: string) =>
+  gitCall(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+
+// rev-parse's answer: git ends it with one LF on every platform and keeps
+// every other character, spaces and a CR before the LF included.
+export const commonDirFrom = (stdout: string) => stdout.replace(/\n$/, "");
+
+// The files `git status --porcelain=v1 -z` names, as hits under the
+// repository `root`. Each record is `XY path`, NUL-ended, and a rename or copy
+// is followed by a record holding the path it came from. Paths are relative
+// to the repository root with `/` separators and never quoted, so spaces and
+// newlines arrive as they are. Files gone from the working tree are left out:
+// there's nothing left to mention. Output cut at the engine's limit ends
+// mid-record, so its last piece is dropped and the result says it was cut.
+export const parseGitStatus = (
+  root: string,
+  out: string,
+  truncated: boolean,
+  max = WALK_MAX_FILES,
+): Walk => {
+  const records = out.split("\0");
+  // The empty piece after the final NUL, or the record the cut left partial.
+  records.pop();
+  const hits: Hit[] = [];
+  const windows = isWindowsPath(root);
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i] ?? "";
+    const code = record.slice(0, 2);
+    if (/[RC]/.test(code)) i++;
+    const rel = record.slice(3);
+    if (record[2] !== " " || !rel || rel.endsWith("/")) continue;
+    if ((code[1] === "D" && code[0] !== "U") || code === "D ") continue;
+    if (hits.length >= max)
+      return { hits, capped: true, deep: false, foldersCapped: false };
+    hits.push({
+      path: joinPath(root, windows ? rel.replace(/\//g, "\\") : rel),
+      rel,
+      name: rel.slice(rel.lastIndexOf("/") + 1),
+      size: 0,
+      status: code.trim(),
+    });
+  }
+  return truncated
+    ? { hits, capped: false, deep: false, foldersCapped: false, cut: true }
+    : { hits, capped: false, deep: false, foldersCapped: false };
 };
 
 // The '..' row's key, drawn above the folder's rows.

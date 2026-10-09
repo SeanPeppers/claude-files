@@ -20,6 +20,7 @@ declare module "claude-code" {
       recent: { path: string; rel: string; name: string; size: number }[];
       peek: boolean;
       peeked: number;
+      changes: boolean;
     };
   }
 }
