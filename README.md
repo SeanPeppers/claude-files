@@ -238,9 +238,9 @@ the form on GitHub, and you can edit or delete every field first. A terminal
 that can't open links shows the address, on github.com, instead. `f` goes
 back to where you were.
 
-The `t` button shows at the end of the footer only where it fits on a row
-the footer already takes, so it never costs the list a row; in a pane too
-narrow for it, `/files bug` still opens the screen.
+`t` works in every view. Its button ends the footer where it fits on a row
+the footer already takes, so it never costs the list a row; otherwise it sits
+at the right of the header row.
 
 ## Safety
 

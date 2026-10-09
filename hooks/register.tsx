@@ -1540,6 +1540,19 @@ export const register: Register = (on) => {
       );
     }
 
+    // `t` works in every view: the button ends the footer where it fits on a
+    // row the footer already takes, else it sits in the header row.
+    const feedbackButton = (from: string) => (
+      <Button
+        key="feedback"
+        plain
+        hotkey="t"
+        dimColor
+        onPress={() => openFeedback($, from, focusedKey)}
+      >
+        feedback
+      </Button>
+    );
     const preview = await readState($, "preview");
     if (preview && previewLines?.path === preview) {
       const anchor = await readState($, "anchor");
@@ -1622,9 +1635,12 @@ export const register: Register = (on) => {
             <Text bold color="claude" wrap="truncate-start">
               {relative(preview)}
             </Text>
-            <Text
-              dimColor
-            >{`${lines.length} ${lines.length === 1 ? "line" : "lines"}`}</Text>
+            <Box gap={2}>
+              <Text
+                dimColor
+              >{`${lines.length} ${lines.length === 1 ? "line" : "lines"}`}</Text>
+              {!feedbackFits && feedbackButton("lines")}
+            </Box>
           </Box>
           <Text
             dimColor={!anchor && kept.length === 0}
@@ -1751,17 +1767,7 @@ export const register: Register = (on) => {
                 {insertLabel}
               </Button>
             )}
-            {feedbackFits && (
-              <Button
-                key="feedback"
-                plain
-                hotkey="t"
-                dimColor
-                onPress={() => openFeedback($, "lines", focusedKey)}
-              >
-                feedback
-              </Button>
-            )}
+            {feedbackFits && feedbackButton("lines")}
           </Box>
           {!compact && (
             <Text dimColor wrap="truncate-end">
@@ -1924,13 +1930,17 @@ export const register: Register = (on) => {
                   ? `changes ${relative(project?.root || cwd)}`
                   : `search ${relative(cwd)}`}
             </Text>
-            <Text dimColor>
-              {total === undefined
-                ? ""
-                : query
-                  ? `${hits.length}/${total}`
-                  : `${total}`}
-            </Text>
+            <Box gap={2}>
+              <Text dimColor>
+                {total === undefined
+                  ? ""
+                  : query
+                    ? `${hits.length}/${total}`
+                    : `${total}`}
+              </Text>
+              {!listFeedbackFits &&
+                feedbackButton(recentView ? "recent" : "search")}
+            </Box>
           </Box>
           {Input && (
             <Box
@@ -2082,19 +2092,8 @@ export const register: Register = (on) => {
                 {`insert ${marked.length} marked`}
               </Button>
             )}
-            {listFeedbackFits && (
-              <Button
-                key="feedback"
-                plain
-                hotkey="t"
-                dimColor
-                onPress={() =>
-                  openFeedback($, recentView ? "recent" : "search", focusedKey)
-                }
-              >
-                feedback
-              </Button>
-            )}
+            {listFeedbackFits &&
+              feedbackButton(recentView ? "recent" : "search")}
           </Box>
           {!compact && (
             <Text dimColor wrap="truncate-end">
@@ -2183,9 +2182,12 @@ export const register: Register = (on) => {
           <Text bold color="claude" wrap="truncate-start">
             {relative(dir)}
           </Text>
-          <Text dimColor>
-            {query ? `${ranked.length}/${shownCount}` : `${shownCount}`}
-          </Text>
+          <Box gap={2}>
+            <Text dimColor>
+              {query ? `${ranked.length}/${shownCount}` : `${shownCount}`}
+            </Text>
+            {!listFeedbackFits && feedbackButton("folder")}
+          </Box>
         </Box>
         {Input && (
           <Box
@@ -2366,17 +2368,7 @@ export const register: Register = (on) => {
               {`insert ${marked.length} marked`}
             </Button>
           )}
-          {listFeedbackFits && (
-            <Button
-              key="feedback"
-              plain
-              hotkey="t"
-              dimColor
-              onPress={() => openFeedback($, "folder", focusedKey)}
-            >
-              feedback
-            </Button>
-          )}
+          {listFeedbackFits && feedbackButton("folder")}
         </Box>
         {!compact && (
           <Text dimColor wrap="truncate-end">

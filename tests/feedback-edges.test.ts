@@ -290,7 +290,7 @@ test("/files with no args after Feedback reopens the folder, and its links are g
 });
 
 // The line view's footer grows with a started range and kept ranges; the
-// feedback button must never push it past the pane.
+// feedback button is always there and never pushes it past the pane.
 for (const [COLUMNS, ROWS] of [
   [120, 40],
   [60, 14],
@@ -312,12 +312,10 @@ for (const [COLUMNS, ROWS] of [
     await ui.press({ key: "line:5" });
     await focus($, "line:6");
     await fits();
-    if (await ui.find({ key: "feedback" })) {
-      await ui.press({ key: "feedback" });
-      await fits();
-      await ui.press({ key: "feedback:back" });
-      // The kept range survives a trip through Feedback.
-      expect(await ui.find({ key: "insert" })).toBeDefined();
-    }
+    await ui.press({ key: "feedback" });
+    await fits();
+    await ui.press({ key: "feedback:back" });
+    // The kept range survives a trip through Feedback.
+    expect(await ui.find({ key: "insert" })).toBeDefined();
     await ui.unmount();
   });

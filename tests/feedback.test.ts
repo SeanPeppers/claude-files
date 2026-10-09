@@ -106,14 +106,12 @@ for (const [surface, COLUMNS, ROWS] of [
     });
     await ui.press({ key: "lines" });
     expect(await ui.find({ key: "line:1" })).toBeDefined();
-    if (await ui.find({ key: "feedback" })) {
-      await ui.press({ key: "feedback" });
-      expect(new URL((await linksOf(ui)).bug).searchParams.get("view")).toBe(
-        "lines",
-      );
-      await ui.press({ key: "feedback:back" });
-      expect(await ui.find({ key: "line:1" })).toBeDefined();
-    }
+    await ui.press({ key: "feedback" });
+    expect(new URL((await linksOf(ui)).bug).searchParams.get("view")).toBe(
+      "lines",
+    );
+    await ui.press({ key: "feedback:back" });
+    expect(await ui.find({ key: "line:1" })).toBeDefined();
     await ui.unmount();
   });
 
@@ -144,16 +142,17 @@ test("/files bug and /files idea open straight to Feedback; /files does not", as
   }
 });
 
-// The button shows only where it costs no footer row: the list keeps every
-// row it had, and the footer as drawn still fits the pane.
+// The button ends the footer only where it costs no footer row, else it sits
+// in the header; either way t works in every view and the pane still fits.
 for (const [COLUMNS, ROWS] of [
   [120, 40],
+  [64, 33],
   [60, 14],
   [41, 20],
   [39, 11],
   [30, 20],
 ] as const)
-  test(`the feedback button never wraps the footer at ${COLUMNS}x${ROWS}`, async ($, on) => {
+  test(`the feedback button shows in every view and fits at ${COLUMNS}x${ROWS}`, async ($, on) => {
     mockProject(on);
     mock.store(on, { recent: { "/p": NAMES.map((name) => `/p/${name}`) } });
     const ui = await $.ui.mount({
@@ -176,6 +175,7 @@ for (const [COLUMNS, ROWS] of [
       if (await ui.find({ key: "more:below" }))
         await ui.press({ key: "more:below" });
       expect(heightOf(await ui.drawn(), COLUMNS)).toBeLessThanOrEqual(ROWS);
+      expect(await ui.find({ key: "feedback" })).toBeDefined();
     };
     await fits();
     await focus("row:alpha.ts");
@@ -192,6 +192,9 @@ for (const [COLUMNS, ROWS] of [
     await ui.press({ key: "folders" });
     await focus("row:beta.md");
     await ui.press({ key: "lines" });
+    // A started range crowds the footer most.
+    await ui.press({ key: "line:1" });
+    await focus("line:2");
     await fits();
     await ui.unmount();
   });
