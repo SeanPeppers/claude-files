@@ -137,7 +137,8 @@ type LineFooter = { anchored: boolean; kept: number };
 // What each surface drawing the pane last drew: the rows of the list and of
 // the file that fit its pane, those rows under another footer (a press that
 // changes a footer label can rewrap it, so the press knows the rows it is
-// about to leave), and whether it drew the filter box (the stored filter
+// about to leave), the lines its preview has room for (0: none, so nothing
+// is read for it), and whether it drew the filter box (the stored filter
 // applies to its list only then). Both are drawn a window at a time: a pane
 // taller than its tree takes the arrows to scroll, one that fits lets them
 // walk the rows. Kept per surface because a terminal and a phone can draw one
@@ -148,6 +149,7 @@ type Drawn = {
   lineRows: number;
   listRowsAfter: (change: Partial<Footer>) => number;
   lineRowsAfter: (footer: LineFooter) => number;
+  peekFits: number;
   box: boolean;
 };
 const unseen = (): Drawn => ({
@@ -155,6 +157,7 @@ const unseen = (): Drawn => ({
   lineRows: 10,
   listRowsAfter: () => 10,
   lineRowsAfter: () => 10,
+  peekFits: 0,
   box: true,
 });
 // Which of two keys the m button and the line view's f button are drawn
@@ -189,13 +192,12 @@ let lastFind = -1;
 const approved = new Set<string>();
 // What the confirm screen is asking about: where the row really leads.
 let confirmTarget: { real: string; escapes: boolean } | undefined;
-// The browsing preview: what it shows for the row `key`, the lines it has
-// room for as last drawn (0: none, so nothing is read), the read waiting for
-// the arrows to rest, and a count that lets a newer read beat an older one.
+// The browsing preview: what it shows for the row `key`, the read waiting
+// for the arrows to rest, and a count that lets a newer read beat an older
+// one. It reads for the surface the arrows steer (steered).
 let peekView:
   | { key: string; path: string; lines: string[]; notice: string }
   | undefined;
-let peekFits = 0;
 let peekTimer: { cancel: () => void } | undefined;
 let peekTicket = 0;
 const PEEK_DELAY_MS = 120;
@@ -1465,7 +1467,8 @@ async function schedulePeek($: EngineInterface) {
   peekTimer?.cancel();
   peekTimer = undefined;
   const ticket = ++peekTicket;
-  if (peekFits === 0 || previewLines || !(await readState($, "peek"))) return;
+  if (steered().peekFits === 0 || previewLines || !(await readState($, "peek")))
+    return;
   // A newer call started while this one read state: its timer wins, and a
   // second timer here would read a row the arrows never rested on.
   if (ticket !== peekTicket) return;
@@ -2011,7 +2014,7 @@ export const register: Register = (on) => {
       };
       view.listRowsAfter = (change) => rowsWith({ ...now, ...change }).rows;
       const atNow = rowsWith(now);
-      peekFits = atNow.fits;
+      view.peekFits = atNow.fits;
       listFeedbackFits = fitsAfter(labelsFor(now), FEEDBACK_LABEL, bodyColumns);
       return atNow.rows;
     };
@@ -2019,7 +2022,7 @@ export const register: Register = (on) => {
     // arrows don't flash the hint; once nothing is pending, a preview of a
     // row the ring has left (the list changed under it) gives way to the hint.
     const peekBox = () => {
-      if (!peeking || peekFits === 0) return undefined;
+      if (!peeking || view.peekFits === 0) return undefined;
       const shown =
         peekView?.path && (peekView.key === focusedKey || peekTimer)
           ? peekView
@@ -2034,7 +2037,7 @@ export const register: Register = (on) => {
               {shown ? shown.notice : "arrow onto a file to preview it"}
             </Text>
           ) : (
-            shown.lines.slice(0, peekFits).map((line, i) => (
+            shown.lines.slice(0, view.peekFits).map((line, i) => (
               <Text key={`peek:${i}`} wrap="truncate-end">
                 {previewLine(line, bodyColumns - 2) || " "}
               </Text>

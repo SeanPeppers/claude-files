@@ -90,6 +90,7 @@ function wire(on: any, opts: Opts = {}) {
     return { value: undefined };
   });
   on("prompt.fill", () => ({ isFilled: true }));
+  on("session.detach", (_: any, e: any) => ({ clientId: e.clientId }));
   return log;
 }
 
@@ -332,6 +333,11 @@ test("the phone has no preview and ignores one left on by the desktop", async ($
   await desk.press({ key: "peek" });
   const deskRows = (await rowKeys(desk)).length;
   await desk.unmount();
+  await $.session.detach({
+    surface: "desktop",
+    clientId: "desk",
+    reason: "detach",
+  });
   const phone = await mount($, "mobile");
   expect(await phone.find({ key: "peek" })).toBeUndefined();
   expect(await phone.find({ key: "peek:box" })).toBeUndefined();
@@ -341,4 +347,20 @@ test("the phone has no preview and ignores one left on by the desktop", async ($
   await clock.advance(200);
   expect(log.reads).toEqual([]);
   await phone.unmount();
+});
+
+test("the desktop's arrows still preview while a phone draws the pane", async ($, on) => {
+  const clock = mock.clock(on);
+  const log = wire(on, { many: 40 });
+  const desk = await mount($, "desktop");
+  await desk.press({ key: "peek" });
+  // The phone draws after the desktop: it has no preview, but the arrows
+  // still come from the desktop's keyboard.
+  const phone = await mount($, "mobile");
+  expect(await phone.find({ key: "peek:box" })).toBeUndefined();
+  await arrowOnto($, "row:app.ts");
+  expect(await rest(clock, desk, "line 1")).toBeDefined();
+  expect(log.reads).toEqual(["/p/app.ts"]);
+  await phone.unmount();
+  await desk.unmount();
 });
