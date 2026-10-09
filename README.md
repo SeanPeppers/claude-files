@@ -177,7 +177,16 @@ always `/`, which Windows accepts too.
 
 **Focus.** The letter keys work while the pane has the keyboard. After a file
 is added the keyboard goes back to the prompt so you can keep typing; click the
-pane or press `ctrl+x` then `Tab` to return.
+pane or press `ctrl+x` then `Tab` to return. When `h` or `p` moves the
+highlight (hidden files appear above it, the preview or the button's longer
+label wrapping the footer pushes its row out of view, or the list under a
+footer button grows or shrinks), the highlight goes
+to the button pressed, so pressing it again undoes it. When `m` or `i` brings,
+grows or takes away the `insert` button and that rewraps the footer, the list
+scrolls to keep the highlighted row in view and the highlight stays on it.
+The line view does the same for the line you start, end, keep, insert or
+clear a range from when `keep range`, `clear` or `insert` rewraps its
+footer.
 
 The folder is listed when you open it; reopen `/files` to see files added since.
 

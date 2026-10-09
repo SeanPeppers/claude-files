@@ -1,5 +1,6 @@
-import { expect, test } from "claude-code/testing";
+import { expect } from "claude-code/testing";
 
+import { test } from "./kit";
 import { posix } from "./posix";
 
 const numbered = (n: number) =>
@@ -185,6 +186,9 @@ test("kept ranges in a compact pane survive sliding to the end", async ($, on) =
   }
   expect(await ui.find({ key: "line:300" })).toBeDefined();
   await ui.press({ key: "line:299" });
+  // The start brings the k button, whose wrap can take the last row.
+  while (await ui.find({ key: "more:below" }))
+    await ui.press({ key: "more:below" });
   await ui.press({ key: "line:300" });
   expect(log.filled).toEqual(["@big.ts#L1-2 @big.ts#L299-300 "]);
   await ui.unmount();

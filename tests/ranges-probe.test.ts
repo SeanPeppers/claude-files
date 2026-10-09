@@ -1,6 +1,7 @@
-import { expect, test } from "claude-code/testing";
+import { expect } from "claude-code/testing";
 
 import { mentionFor } from "../hooks/rank";
+import { test } from "./kit";
 import { posix } from "./posix";
 
 const numbered = (n: number) =>

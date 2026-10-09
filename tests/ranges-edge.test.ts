@@ -1,6 +1,7 @@
-import { expect, test } from "claude-code/testing";
+import { expect } from "claude-code/testing";
 
 import { mentionsFor, mergeRanges } from "../hooks/rank";
+import { test } from "./kit";
 import { posix } from "./posix";
 
 const numbered = (n: number) =>
@@ -250,9 +251,9 @@ for (const [rows, columns] of [
     await ui.unmount();
   });
 
-// The footer grows (k, x, i) as ranges are kept; if it wrapped onto a new row
-// the line window shrank under the ring and the start line slid out of view.
-test("the line window keeps its size as the footer grows in a narrow pane", async ($, on) => {
+// The footer grows (k, x, i) as ranges are kept; when it wraps onto a new
+// row the window shrinks, and the line a range starts on must stay in view.
+test("a range started on the last drawn line stays in view as the footer grows in a narrow pane", async ($, on) => {
   wire(on);
   const ui = await mount($, 30, 64);
   await openLinesOf($, ui, "big.ts");
@@ -263,9 +264,9 @@ test("the line window keeps its size as the footer grows in a narrow pane", asyn
   };
   const rows = await lastDrawn();
   await keep($, ui, 1, 1);
-  expect(await lastDrawn()).toBe(rows);
-  await ui.press({ key: `line:${rows}` });
-  expect(await ui.find({ key: `line:${rows}` })).toBeDefined();
-  expect(await lastDrawn()).toBe(rows);
+  const last = await lastDrawn();
+  await ui.press({ key: `line:${last}` });
+  expect(await ui.find({ key: `line:${last}` })).toBeDefined();
+  expect(await lastDrawn()).toBeLessThanOrEqual(rows);
   await ui.unmount();
 });
