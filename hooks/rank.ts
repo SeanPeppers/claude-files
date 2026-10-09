@@ -543,3 +543,117 @@ export const rankHits = (
         NAME_ORDER.compare(a.hit.rel, b.hit.rel),
     )
     .map((row) => row.hit);
+
+// Recent files: the files last put in the prompt, newest first, per working
+// directory, as the plugin's store keeps them between sessions.
+export const RECENT_MAX = 10;
+export const RECENT_MAX_DIRS = 50;
+export type RecentByDir = Record<string, string[]>;
+
+// The store is a JSON file on disk anyone can edit, so only well-formed lists
+// are kept. Object.fromEntries, not assignment: a `__proto__` key stays data.
+export const recentByDir = (stored: unknown): RecentByDir =>
+  !stored || typeof stored !== "object" || Array.isArray(stored)
+    ? {}
+    : Object.fromEntries(
+        Object.entries(stored)
+          .filter((entry): entry is [string, unknown[]] =>
+            Array.isArray(entry[1]),
+          )
+          .map(([dir, paths]) => [
+            dir,
+            [
+              ...new Set(
+                paths
+                  .filter((path): path is string => typeof path === "string")
+                  .filter((path) => path !== ""),
+              ),
+            ].slice(0, RECENT_MAX),
+          ]),
+      );
+
+export const recentOf = (byDir: RecentByDir, dir: string) =>
+  Object.hasOwn(byDir, dir) ? (byDir[dir] ?? []) : [];
+
+// `paths` go to the top of `dir`'s list, without repeats, and `dir` becomes
+// the newest project; projects past RECENT_MAX_DIRS drop out oldest first, so
+// the store stays small.
+export const withRecent = (
+  byDir: RecentByDir,
+  dir: string,
+  paths: readonly string[],
+): RecentByDir => {
+  const list = [...new Set([...paths, ...recentOf(byDir, dir)])].slice(
+    0,
+    RECENT_MAX,
+  );
+  const others = Object.entries(byDir)
+    .filter(([other]) => other !== dir)
+    .slice(-(RECENT_MAX_DIRS - 1));
+  return Object.fromEntries([...others, [dir, list]]);
+};
+
+// `dir`'s list with only `kept` left, in its order: files deleted since drop out.
+export const keepRecent = (
+  byDir: RecentByDir,
+  dir: string,
+  kept: readonly string[],
+): RecentByDir =>
+  Object.fromEntries(
+    Object.entries(byDir).map(([other, paths]) => [
+      other,
+      other === dir ? paths.filter((path) => kept.includes(path)) : paths,
+    ]),
+  );
+
+// A recent file as a row: relative to the working directory, with `/`, when
+// under it, its full path when not.
+export const recentHit = (path: string, cwd: string, size: number): Hit => {
+  const rel = relativeTo(path, cwd);
+  return {
+    path,
+    rel: !rel ? path : isWindowsPath(path) ? rel.replace(/\\/g, "/") : rel,
+    name: baseName(path),
+    size,
+  };
+};
+
+// Unfiltered, recent files stay newest first; a filter ranks them as search
+// does. Hidden names always show: each was picked on purpose.
+export const recentShown = (hits: readonly Hit[], query: string) =>
+  query ? rankHits(hits, query, true) : hits;
+
+// Browsing preview: files over PEEK_MAX_BYTES aren't read at all, since
+// `$.fs.read` has no limit short of the whole file.
+export const PEEK_MAX_BYTES = 64 * 1024;
+const PEEK_MAX_LINES = 10;
+const PEEK_MIN_LINES = 3;
+// The preview's file name line and the blank row above it.
+export const PEEK_CHROME_ROWS = 2;
+// Below this a preview line shows too little to be worth the list rows.
+const PEEK_MIN_COLUMNS = 40;
+
+// Lines the preview under a list gets out of the `room` the list would have
+// had alone, or 0 when it doesn't fit: never in the compact layout or a narrow
+// pane, and never more than the list keeps for itself.
+export const peekLines = (room: number, columns: number, compact: boolean) => {
+  if (compact || columns < PEEK_MIN_COLUMNS) return 0;
+  const lines = Math.min(
+    PEEK_MAX_LINES,
+    Math.floor((room - PEEK_CHROME_ROWS) / 2),
+  );
+  return lines >= PEEK_MIN_LINES ? lines : 0;
+};
+
+// The first `count` lines of `text`, without splitting the rest of it.
+export const headLines = (text: string, count: number) => {
+  const lines: string[] = [];
+  let from = 0;
+  while (lines.length < count && from < text.length) {
+    const end = text.indexOf("\n", from);
+    lines.push(text.slice(from, end < 0 ? text.length : end));
+    if (end < 0) break;
+    from = end + 1;
+  }
+  return lines;
+};

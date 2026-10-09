@@ -116,6 +116,8 @@ To update later: `claude plugin update file-picker@claude-files`.
 | `m` on a file | mark or unmark it (`✓`); marks stay as you move between folders and when you close and reopen `/files`. Folders can't be marked (use `a`) |
 | `i` | insert every marked file at once (`@src/a.ts @"my notes.md" @docs/b.md`) and clear the marks |
 | `s` | search the whole project (see below) |
+| `r` | show the files you added here before (see below) |
+| `p` | show or hide a preview of the highlighted file under the list: its first lines, once the arrows rest on it. Off until you press it, then on until the session ends. Secrets files, binary files, links that lead out of the project and files over 64 KiB get a one-line notice instead |
 | `Esc` | close the pane |
 
 **Project search** (after `s`)
@@ -123,7 +125,7 @@ To update later: `claude plugin update file-picker@claude-files`.
 | Key | Does |
 |---|---|
 | type | match file names anywhere under the working directory, shown as relative paths (`src/components/Button.tsx`); a name match ranks first, then the shorter name, then the closer path; `comp/btn` matches the path. With nothing typed, files are listed alphabetically by path |
-| `Enter` / `l` / `m` | add the file, pick its lines or mark it, exactly as in a folder |
+| `Enter` / `l` / `m` / `p` | add the file, pick its lines, mark it or preview it, exactly as in a folder |
 | `h` | include hidden folders and files (walks the project again) |
 | `f` | back to the folder list |
 
@@ -134,6 +136,20 @@ folders (unless hidden files are shown), never follows linked folders, and
 stops at 12 folder levels, 5,000 folders listed or 20,000 files; the pane
 says when it stopped early. Press `s` again from the folder list to see files
 added since.
+
+**Recent files** (after `r`)
+
+| Key | Does |
+|---|---|
+| type | filter the recent files, ranked as in search; with nothing typed they're newest first |
+| `Enter` / `l` / `m` / `p` | add the file, pick its lines, mark it or preview it, exactly as in a folder |
+| `f` | back to the folder list |
+
+The last 10 files you put in the prompt from this working directory (with
+Enter, `w`, a line range or `i`) are kept in the plugin's own store, so they
+are still there in the next session. Files deleted or moved since drop out of
+the list. Each project keeps its own list; the 50 most recently used projects
+are kept. A secrets file in the list still needs its second yes.
 
 **Lines** (after `l`)
 
@@ -167,7 +183,8 @@ The folder is listed when you open it; reopen `/files` to see files added since.
 
 **Pane size.** A pane under 20 rows (such as the band under the transcript in a
 terminal under ~110 columns) uses a compact layout, and a narrow pane wraps the
-footer buttons. Below about 40 columns by 10 rows the arrow keys may scroll the
+footer buttons. The preview (`p`) shows only in a pane of at least 20 rows
+and 40 columns, and takes at most half the list's rows. Below about 40 columns by 10 rows the arrow keys may scroll the
 pane instead of moving between rows: widen the terminal or drag the pane edge
 to give it room.
 
@@ -175,12 +192,22 @@ to give it room.
 
 What the plugin does: it lists folders (project search lists every folder under
 the working directory, within the limits above, and never opens a file), reads
-a file **only when you press `l` on it** (to draw its lines in the pane), and
-inserts text into your prompt. What it remembers (the folder, the filter, the
-marked files, the kept line ranges) is the pane's own session state, never file
-contents. It never writes files, runs commands or touches the network, never
-reads your Claude Code settings, and nothing is sent until you press Enter on
-the prompt yourself.
+a file **only when you press `l` on it** (to draw its lines in the pane) **or,
+with the preview on, when the arrows rest on it** (to draw its first lines under
+the list), and inserts text into your prompt. The preview is off until you press
+`p`; it reads only files up to 64 KiB, and never reads a secrets file (below,
+even one you said yes to) or a link that leads out of the project. What it shows
+stays on your screen: nothing it reads goes into the prompt. What it
+remembers for the session (the folder, the filter, the marked files, the kept
+line ranges) is the pane's own state, never file contents. It
+never writes your files, runs commands or touches the network, never reads your
+Claude Code settings, and nothing is sent until you press Enter on the prompt
+yourself.
+
+**What it stores.** The full paths of the last 10 files you added to the
+prompt, per working directory (for `r`), secrets files included, and nothing
+else: no file contents, no prompts. They live in the plugin's own store, a
+JSON file Claude Code keeps for it in your Claude Code configuration folder.
 
 **Secrets files need a second yes.** For `.env` and `.envrc` files, private
 keys (`*.pem`, `*.key`, `*.ppk`, `id_rsa`, `id_ed25519`, ...), credential files
@@ -227,17 +254,21 @@ changes what Claude or its tools do; they only add the pane.
 |---|---|
 | `session.start` | registers the `/files` command |
 | `command.run` (`/files` only) | opens the Files pane with an empty filter. It is matched to the `/files` command, so it never sees or changes any other command |
-| `ui.render` (the Files pane) | draws the folder list, the project search, the line view (with any kept ranges) or the secrets confirmation |
-| `ui.focus` (the Files pane) | remembers the highlighted row for `l` and `m`, and when the arrows reach a `↑/↓ N more` row, slides the list one row |
+| `ui.render` (the Files pane) | draws the folder list, the project search, the recent files, the line view (with any kept ranges) or the secrets confirmation |
+| `ui.focus` (the Files pane) | remembers the highlighted row for `l`, `m` and the preview, and when the arrows reach a `↑/↓ N more` row, slides the list one row. With the preview on, it starts a short timer whose end reads the highlighted file |
 
 Engine calls it makes: `$.command.register` (the `/files` command),
-`$.fs.list` and `$.fs.stat` (folder listings and file types; project search is `$.fs.list` alone, one folder per call),
-`$.fs.read` (only the file you press `l` on, up to 4 MiB),
+`$.fs.list` and `$.fs.stat` (folder listings and file types; project search is `$.fs.list` alone, one folder per call; `r` checks each recent file still exists with `$.fs.stat`),
+`$.fs.read` (the file you press `l` on, up to 4 MiB, and with the preview on,
+the highlighted file, up to 64 KiB), `$.clock.after` (waits 120 ms for the
+arrows to rest before the preview reads),
 `$.prompt.fill` (insert the mention), `$.session.cwd`, `$.ui.*` (pane, focus,
-toasts) and `$.state` (the pane's own session state: folder, filter, scroll
-position, search mode, the open file, the range start, the kept line ranges
-and the marked files). It reads no environment variables, tokens or Claude
-Code settings, and it makes no network requests: `claude plugin validate` shows no `env reads:` line and no
+toasts), `$.store` (the recent files, kept between sessions: read when
+you press `r` or add a file, written when you add a file or one has gone) and `$.state` (the pane's own session state: folder, filter, scroll
+position, search or recent mode, the open file, the range start, the kept line
+ranges, the marked files, the recent files as last checked and whether the preview is on). It
+reads no environment variables, tokens or Claude Code settings, and it makes
+no network requests: `claude plugin validate` shows no `env reads:` line and no
 network calls. The list of secrets file names under [Safety](#safety) is used
 only to ask before such a file goes into the prompt.
 
@@ -275,9 +306,9 @@ Dependabot keeps the pinned actions current.
 | File | What |
 |---|---|
 | `hooks/register.tsx` | `/files`, the pane, the line view, focus handling, picking |
-| `hooks/rank.ts` | pure helpers: ranking, the project walk, paths, mentions, secrets check, the list window |
+| `hooks/rank.ts` | pure helpers: ranking, the project walk, paths, mentions, secrets check, the list window, the recent list |
 | `types/index.d.ts` | the session state the pane keeps |
-| `tests/` | unit, hardening (hostile names, Windows paths), line view, project search and UI tests |
+| `tests/` | unit, hardening (hostile names, Windows paths), line view, project search, recent files and UI tests |
 | `CHANGELOG.md` | what changed in each version |
 
 One design note, since it isn't obvious: a pane whose content is taller than

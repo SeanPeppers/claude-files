@@ -16,6 +16,10 @@ declare module "claude-code" {
       marked: string[];
       search: boolean;
       walked: number;
+      recentView: boolean;
+      recent: { path: string; rel: string; name: string; size: number }[];
+      peek: boolean;
+      peeked: number;
     };
   }
 }
