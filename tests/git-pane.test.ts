@@ -629,7 +629,7 @@ test("a SHA-256 repository that needs attributes says git stopped", async ($, on
   const ui = await mount($);
   await ui.press({ key: "changes" });
   expect(
-    await until(ui, { text: /can't skip a SHA-256 repository's filters/ }),
+    await until(ui, { text: /can't skip this SHA-256 repository's filters/ }),
   ).toBe(true);
   await ui.unmount();
 });

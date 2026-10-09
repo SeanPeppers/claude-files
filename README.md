@@ -257,8 +257,8 @@ git config. Press `g` only where you'd run `git status` yourself.
 the pane says a newer git is needed. In a SHA-256 repository git can't use
 the SHA-1 empty tree, so it may refuse whenever it needs attributes, which is
 when it has to re-read a file whose timestamps changed but size didn't. Then
-the pane says git stopped; otherwise it lists the changes. Either way no
-filter runs.
+the pane says git can't skip the repository's filters; otherwise it lists
+the changes. Either way no filter runs.
 
 Apart from that one command, the plugin runs nothing, never writes your
 files or touches the network, never reads your Claude Code settings, and

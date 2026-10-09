@@ -655,7 +655,7 @@ export const gitFailNote = (exitCode: number, stderr: string) => {
   if (exitCode === 129 && stderr.includes("unknown option"))
     return "git 2.45 or newer is needed to keep repository filters from running";
   if (stderr.includes("bad --attr-source"))
-    return "git stopped: it can't skip a SHA-256 repository's filters to re-read a file";
+    return "git can't skip this SHA-256 repository's filters";
   return `git status failed: ${stderr.trim().split("\n")[0] || `exit ${exitCode}`}`;
 };
 

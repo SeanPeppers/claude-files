@@ -221,9 +221,7 @@ test("git failing: too old, SHA-256, or its own first stderr line", async () => 
   ).toBe("git 2.45 or newer is needed to keep repository filters from running");
   expect(
     gitFailNote(128, "fatal: bad --attr-source or GIT_ATTR_SOURCE\n"),
-  ).toBe(
-    "git stopped: it can't skip a SHA-256 repository's filters to re-read a file",
-  );
+  ).toBe("git can't skip this SHA-256 repository's filters");
   expect(gitFailNote(128, "fatal: not a git repository\nmore\n")).toBe(
     "git status failed: fatal: not a git repository",
   );
