@@ -170,3 +170,49 @@ test("h whose longer label wraps the footer sends the ring to the h button", asy
   expect(await ui.find({ key: "insert" })).toBeUndefined();
   await ui.unmount();
 });
+
+// "i: insert 1 marked" wraps the same 100-column footer. The engine keeps a
+// ring at its place in the pane's order, so m and i that move the row put
+// the ring back on it through the m button's fresh key, which the test kit
+// (keeping the ring by key) shows as that key being drawn.
+test("m whose insert label wraps the footer keeps the marked row in view", async ($, on) => {
+  mock.clock(on);
+  const log = wire(on, "/p", fortyFiles());
+  const ui = await mount($, 30, 100);
+  const before = await drawnRows(ui);
+  const last = before.at(-1);
+  await arrowOnto($, last);
+  await ui.press({ key: "mark" });
+  const after = await drawnRows(ui);
+  expect(after.length).toBe(before.length - 1);
+  expect(after.at(-1)).toBe(last);
+  expect(await ui.find({ key: "mark:again" })).toBeDefined();
+  expect(await ui.find({ key: "insert" })).toBeDefined();
+  // A second m unmarks the row in view, not one the redraw hid.
+  await ui.press({ key: "mark:again" });
+  expect(await ui.find({ key: "insert" })).toBeUndefined();
+  expect(await drawnRows(ui)).toContain(last);
+  expect(log.toasts).toEqual([]);
+  await ui.unmount();
+});
+
+test("i that clears the marks keeps the highlighted row at the list's end in view", async ($, on) => {
+  mock.clock(on);
+  const log = wire(on, "/p", fortyFiles());
+  const ui = await mount($, 30, 100);
+  await arrowOnto($, "row:f00.txt");
+  await ui.press({ key: "mark" });
+  while (await ui.find({ key: "more:below" }))
+    await ui.press({ key: "more:below" });
+  await arrowOnto($, "row:f39.txt");
+  const before = await drawnRows(ui);
+  await ui.press({ key: "insert" });
+  expect(log.toasts.at(-1)).toMatch(/Added 1 file/);
+  const after = await drawnRows(ui);
+  expect(after.length).toBe(before.length + 1);
+  expect(after.at(-1)).toBe("row:f39.txt");
+  expect(await ui.find({ key: "mark:again" })).toBeDefined();
+  await ui.press({ key: "mark:again" });
+  expect(await ui.find({ text: /✓ f39\.txt/ })).toBeDefined();
+  await ui.unmount();
+});

@@ -176,7 +176,9 @@ pane or press `ctrl+x` then `Tab` to return. When `h` or `p` moves the
 highlight (hidden files appear above it, the preview or the button's longer
 label wrapping the footer pushes its row out of view, or the list under a
 footer button grows or shrinks), the highlight goes
-to the button pressed, so pressing it again undoes it.
+to the button pressed, so pressing it again undoes it. When `m` or `i` brings,
+grows or takes away the `insert` button and that rewraps the footer, the list
+scrolls to keep the highlighted row in view and the highlight stays on it.
 
 The folder is listed when you open it; reopen `/files` to see files added since.
 

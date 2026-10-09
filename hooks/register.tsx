@@ -48,6 +48,7 @@ import {
 const PANE = "file-picker";
 const MORE_ABOVE = "more:above";
 const MORE_BELOW = "more:below";
+const MARK_AGAIN = "mark:again";
 // List: header, filter box (3), '..' (or search's limits line), the two "more"
 // rows, the footer with its margin, hint; a footer that wraps takes more
 // (wrappedRows). Lines: header, status, find box (3), the two "more" rows,
@@ -107,6 +108,9 @@ type Footer = { peek: boolean; hidden: boolean; marks: number };
 // The list's rows as last drawn, under a footer changed by `change`, so a
 // press knows the rows it is about to leave.
 let listRowsAfter = (_change: Partial<Footer>) => listRows;
+// The mark count whose redraw draws the m button under MARK_AGAIN: a key not
+// on screen yet, so a focus on it waits for that redraw.
+let markAgainAt = -1;
 // The row the ring is on, so `l` knows which file to open line by line.
 let focusedKey = "";
 // The previewed file's lines, read once when the line view opens.
@@ -937,7 +941,7 @@ async function markFocused($: EngineInterface) {
   // A search result is always a file, named by its full path.
   if (focusedKey.startsWith("hit:")) {
     const path = focusedKey.slice(4);
-    return updateState($, "marked", (marks) => toggleMark(marks, path));
+    return setMarks($, toggleMark(await readState($, "marked"), path));
   }
   if (!focusedKey.startsWith("row:") || focusedKey === PARENT_KEY)
     return $.ui.toast("Arrow onto a file first, then press m");
@@ -950,9 +954,38 @@ async function markFocused($: EngineInterface) {
     return $.ui.toast(
       "Folders can't be marked: open one and press a to add it",
     );
-  await updateState($, "marked", (marks) =>
-    toggleMark(marks, joinPath(dir, name)),
+  const marks = await readState($, "marked");
+  await setMarks($, toggleMark(marks, joinPath(dir, name)));
+}
+
+// The "insert" button the marks bring, grow and take away can rewrap the
+// footer and so move the list's rows. The highlighted row is kept in view,
+// and when its place in the pane's order changes the ring is put back on it:
+// the engine keeps a ring at its place in that order, so it would sit on
+// another row or a "more" button while m and l acted on the row it left.
+async function setMarks($: EngineInterface, marks: string[]) {
+  const key = focusedKey;
+  const keys = await listKeys($);
+  const index = keys.indexOf(key);
+  const offset = Math.min(
+    await readState($, "offset"),
+    Math.max(0, keys.length - listRows),
   );
+  const rows = listRowsAfter({ marks: marks.length });
+  const kept = windowAround(index, offset, rows, keys.length);
+  const drawn = index >= offset && index < offset + listRows;
+  if (!drawn || kept === offset) {
+    await updateState($, "marked", () => marks);
+    return;
+  }
+  markAgainAt = marks.length;
+  // The marks first: a redraw between the two writes then has the row out
+  // of view (m) or clamps the offset to `kept` itself (i), so the ring never
+  // lands on the row at a place the second write moves.
+  await updateState($, "marked", () => marks);
+  await updateState($, "offset", () => kept);
+  await focusFirst($, [MARK_AGAIN]);
+  await focusFirst($, [key]);
 }
 
 // `i`: every marked file goes through the checks a single pick does, and the
@@ -988,7 +1021,7 @@ async function insertMarked($: EngineInterface) {
   }
   const skips = skipped.length ? `Skipped ${skipped.join(", ")}` : "";
   if (mentions.size === 0) {
-    await updateState($, "marked", () => []);
+    await setMarks($, []);
     return $.ui.toast(`Nothing added. ${skips}`);
   }
   const text = [...mentions].join("");
@@ -998,7 +1031,7 @@ async function insertMarked($: EngineInterface) {
   // The marks stay when the fill fails, so the person can try again.
   if (!filled.isFilled)
     return $.ui.toast("Could not add the marked files to the prompt");
-  await updateState($, "marked", () => []);
+  await setMarks($, []);
   await rememberRecent($, added);
   $.ui.toast(
     `Added ${mentions.size} ${mentions.size === 1 ? "file" : "files"}${skips ? `. ${skips}` : ""}`,
@@ -1588,7 +1621,7 @@ export const register: Register = (on) => {
             {!recentView && hiddenButton}
             {peekButton}
             <Button
-              key="mark"
+              key={marked.length === markAgainAt ? MARK_AGAIN : "mark"}
               plain
               hotkey="m"
               dimColor
@@ -1845,7 +1878,7 @@ export const register: Register = (on) => {
             @ folder
           </Button>
           <Button
-            key="mark"
+            key={marked.length === markAgainAt ? MARK_AGAIN : "mark"}
             plain
             hotkey="m"
             dimColor

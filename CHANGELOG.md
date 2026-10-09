@@ -38,6 +38,11 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   footer or "more" button goes to the `h` button too, where before it slid
   onto whatever took its place on the screen while `l`, `m` and Enter still
   acted on the button it had been on.
+- When `m` brought or grew the `insert` button and that wrapped the footer
+  onto another row, the row just marked could drop out of view, with the
+  highlight landing on "more" while a second `m` unmarked the hidden row.
+  The list now scrolls to keep the highlighted row in view after `m` or `i`,
+  and the highlight stays on it.
 
 ## [0.4.3] - 2026-10-07
 
