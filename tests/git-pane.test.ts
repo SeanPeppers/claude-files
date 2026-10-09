@@ -21,8 +21,8 @@ type Opts = {
   dirs?: string[];
   links?: Record<string, string>;
   attributes?: string;
-  pointer?: string;
-  commondir?: string;
+  common?: string;
+  commonExit?: number;
 };
 
 function wire(
@@ -40,8 +40,8 @@ function wire(
     dirs = [],
     links = {},
     attributes,
-    pointer = "gitdir: /p/.git-dir\n",
-    commondir,
+    common = "/p/.git",
+    commonExit = 0,
   }: Opts = {},
 ) {
   const log = {
@@ -49,6 +49,7 @@ function wire(
     toasts: [] as string[],
     runs: [] as { argv: string[]; cwd?: string; ceiling?: string }[],
     stats: [] as string[],
+    asked: [] as string[][],
   };
   on("session.cwd", () => ({ value: cwd }));
   on("fs.list", (_: any, e: any) => {
@@ -89,6 +90,19 @@ function wire(
     };
   });
   on("process.run", async (_: any, e: any) => {
+    if (e.argv.includes("rev-parse")) {
+      log.asked.push(e.argv);
+      if (reject) return { deny: reject };
+      return {
+        value: {
+          exitCode: commonExit,
+          stdout: commonExit ? "" : `${common}\n`,
+          stderr: commonExit ? "fatal: not a git repository" : "",
+          isStdoutTruncated: false,
+          isStderrTruncated: false,
+        },
+      };
+    }
     log.runs.push({
       // A Windows host spells the work tree natively, as it does every path.
       argv: e.argv.map((arg: string) =>
@@ -112,18 +126,7 @@ function wire(
       },
     };
   });
-  on("fs.read", (_: any, e: any) => {
-    const path = posix(e.path) ?? "";
-    if (path === gitAt) {
-      if (!pointer) throw new Error("EACCES");
-      return { value: pointer };
-    }
-    if (path.endsWith("/commondir")) {
-      if (!commondir) throw new Error("ENOENT");
-      return { value: commondir };
-    }
-    return { value: "one\ntwo\nthree\n" };
-  });
+  on("fs.read", () => ({ value: "one\ntwo\nthree\n" }));
   on("ui.focus", () => ({ value: {} }));
   on("ui.open", () => ({ value: undefined }));
   on("ui.toast", (_: any, e: any) => {
@@ -798,23 +801,25 @@ test("the recent view offers no g; the folder list does", async ($, on) => {
   await ui.unmount();
 });
 
-test("an info/attributes file keeps g from running git at all", async ($, on) => {
-  const log = wire(on, { attributes: "/p/.git/info/attributes" });
+test("an info/attributes file in the git dir git names keeps status from running", async ($, on) => {
+  const log = wire(on, {
+    common: "/main/.git",
+    attributes: "/main/.git/info/attributes",
+  });
   const ui = await mount($);
   await ui.press({ key: "changes" });
   expect(
     await until(ui, { text: /info\/attributes could start a git filter/ }),
   ).toBe(true);
+  expect(log.asked.length).toBe(1);
   expect(log.runs).toEqual([]);
   await ui.unmount();
 });
 
-test("a linked worktree is checked for info/attributes in the shared git dir", async ($, on) => {
+test("the git dir is checked as git names it, spaces kept", async ($, on) => {
   const log = wire(on, {
-    gitKind: "file",
-    pointer: "gitdir: /main/.git/worktrees/p\n",
-    commondir: "../..\n",
-    attributes: "/main/.git/info/attributes",
+    common: "/p/.git dir ",
+    attributes: "/p/.git dir /info/attributes",
   });
   const ui = await mount($);
   await ui.press({ key: "changes" });
@@ -825,13 +830,11 @@ test("a linked worktree is checked for info/attributes in the shared git dir", a
   await ui.unmount();
 });
 
-test("a .git file that can't be read keeps g from running git", async ($, on) => {
-  const log = wire(on, { gitKind: "file", pointer: "" });
+test("when git can't name its dir, status doesn't run", async ($, on) => {
+  const log = wire(on, { commonExit: 128 });
   const ui = await mount($);
   await ui.press({ key: "changes" });
-  expect(
-    await until(ui, { text: "Couldn't read this repository's .git file" }),
-  ).toBe(true);
+  expect(await until(ui, { text: /not a git repository/ })).toBe(true);
   expect(log.runs).toEqual([]);
   await ui.unmount();
 });

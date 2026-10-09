@@ -648,12 +648,6 @@ export const ancestorsOf = (path: string) => {
 // doesn't. Either way no filter runs.
 const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
-// The git dir a `.git` file points at ("gitdir: <path>"), or "".
-export const gitDirFrom = (text: string) => {
-  const match = /^gitdir: (.+)$/m.exec(text);
-  return (match?.[1] ?? "").trim();
-};
-
 export const GIT_ATTRIBUTES_NOTE =
   "This repository's info/attributes could start a git filter, so g stays off here";
 
@@ -668,15 +662,16 @@ export const gitFailNote = (exitCode: number, stderr: string) => {
   return `git status failed: ${stderr.trim().split("\n")[0] || `exit ${exitCode}`}`;
 };
 
-// The one command the plugin runs, from the repository `root` found by its
+// The status command the plugin runs, from the repository `root` found by its
 // `.git`. Optional locks off, so status doesn't write the index. Nothing a
 // repository's files or config set up may start a program: fsmonitor off;
 // attributes read from the empty tree and no global or system attributes
 // file, so no `.gitattributes` can hand a file to a clean or process filter;
 // lazy fetch off, so a partial clone's promisor remote (and its ssh command)
 // is never reached; submodules ignored, so git starts no other git. Not
-// covered by a flag: `$GIT_DIR/info/attributes`, so the pane refuses to run
-// git at all where that file exists. The engine turns
+// covered by a flag: `$GIT_DIR/info/attributes`, so the pane asks git for that
+// dir first (gitCommonDirCall) and runs no status where the file exists. The
+// engine turns
 // repository hooks off for every git it runs. Porcelain paths are relative
 // to git's work tree, so `--work-tree` pins it to `root` whatever GIT_DIR,
 // GIT_WORK_TREE or core.worktree say, and the ceiling stops git from
@@ -685,7 +680,7 @@ export const gitFailNote = (exitCode: number, stderr: string) => {
 // safe.directory ownership check.
 // ponytail: a parent holding the path-list separator can't be a ceiling, so
 // it's left off there; `--work-tree` still keeps every row under `root`.
-export const gitStatusCall = (root: string) => {
+const gitCall = (root: string, command: string[]) => {
   const argv = [
     "git",
     "--no-optional-locks",
@@ -698,11 +693,7 @@ export const gitStatusCall = (root: string) => {
     "-c",
     "core.untrackedCache=false",
     `--work-tree=${root}`,
-    "status",
-    "--porcelain=v1",
-    "-z",
-    "--untracked-files=all",
-    "--ignore-submodules=all",
+    ...command,
   ];
   const ceiling = isRoot(root) ? "" : parentOf(root);
   const listSep = isWindowsPath(root) ? ";" : ":";
@@ -711,6 +702,25 @@ export const gitStatusCall = (root: string) => {
     env.GIT_CEILING_DIRECTORIES = ceiling;
   return { argv, init: { cwd: root, env } };
 };
+
+export const gitStatusCall = (root: string) =>
+  gitCall(root, [
+    "status",
+    "--porcelain=v1",
+    "-z",
+    "--untracked-files=all",
+    "--ignore-submodules=all",
+  ]);
+
+// Asks git, with the same flags, which git dir it would use for `root`:
+// rev-parse reads no index and starts no filter. The plugin checks that dir
+// for `info/attributes` itself rather than copying git's rules for finding it.
+export const gitCommonDirCall = (root: string) =>
+  gitCall(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+
+// rev-parse's answer: git ends it with one newline and keeps every other
+// character, spaces included.
+export const commonDirFrom = (stdout: string) => stdout.replace(/\r?\n$/, "");
 
 // The files `git status --porcelain=v1 -z` names, as hits under the
 // repository `root`. Each record is `XY path`, NUL-ended, and a rename or copy

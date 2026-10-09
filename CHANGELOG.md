@@ -22,7 +22,8 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   columns.
 - `g` lists the files git sees as changed or untracked, with their status
   (`M`, `A`, `R`, `??`, `UU`), filtered and picked like project search
-  results: Enter, `l` and `m` work on them. It runs one command,
+  results: Enter, `l` and `m` work on them. It runs two read-only git
+  commands, `git rev-parse --git-common-dir` and
   `git status --porcelain=v1 -z`, pinned to the repository root with
   `--work-tree` and `GIT_CEILING_DIRECTORIES`, and no other. Its flags turn
   off optional locks, lazy fetch, fsmonitor, the untracked cache and
@@ -30,9 +31,10 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   system attributes file, so a repository's `.gitattributes` can't make git
   run a clean or process filter. It needs git 2.45 or newer. In a SHA-256
   repository git may stop whenever it needs attributes, and the pane says so.
-  Where `.git/info/attributes` exists, which no git flag can skip, `g`
-  doesn't run git at all. The README's Safety section names the command in
-  full and says what git can still run.
+  `info/attributes` in the git folder can't be skipped by any git flag, so
+  where git reports a folder holding it, `status` doesn't run. The README's
+  Safety section names both commands in full and says what git can still
+  run.
   Outside a repository, or when git is missing, too old or fails, the pane
   says why.
 

@@ -212,13 +212,20 @@ the list), and inserts text into your prompt. The preview is off until you press
 `p`; it reads only files up to 64 KiB, and never reads a secrets file (below,
 even one you said yes to) or a link that leads out of the project. What it shows
 stays on your screen: nothing it reads goes into the prompt. When you press `g`
-it runs one command, in the repository root, with no shell:
+it runs two read-only git commands, in the repository root, with no shell.
+First it asks git which git folder it uses:
+
+```
+git --no-optional-locks --no-lazy-fetch --attr-source=4b825dc642cb6eb9a060e54bf8d69288fbee4904 -c core.attributesFile= -c core.fsmonitor=false -c core.untrackedCache=false --work-tree=<repository root> rev-parse --path-format=absolute --git-common-dir
+```
+
+then, unless that folder holds `info/attributes` (below), lists the changes:
 
 ```
 git --no-optional-locks --no-lazy-fetch --attr-source=4b825dc642cb6eb9a060e54bf8d69288fbee4904 -c core.attributesFile= -c core.fsmonitor=false -c core.untrackedCache=false --work-tree=<repository root> status --porcelain=v1 -z --untracked-files=all --ignore-submodules=all
 ```
 
-with `GIT_CEILING_DIRECTORIES` set to the folder above the repository root, so
+Both run with `GIT_CEILING_DIRECTORIES` set to the folder above the repository root, so
 the paths git prints always belong to the root the plugin found: a broken
 `.git` there makes git fail (and the pane say so) instead of reporting an
 outer repository's paths, and `GIT_ATTR_NOSYSTEM=1`, so git skips the system
@@ -243,10 +250,13 @@ The flags keep git from writing or starting anything a repository sets up:
 
 Claude Code also turns repository hooks off for every git it runs.
 
-One file git can't be told to skip: `$GIT_DIR/info/attributes` (the main
-repository's, for a linked worktree or submodule). It could assign a filter
-that your git config defines, so where that file exists `g` doesn't run git
-at all and says why. Cloning never writes it.
+One file git can't be told to skip: `info/attributes` in the git folder (the
+main repository's, for a linked worktree or submodule). It could assign a
+filter that a git config defines, and `git status` would start it. So the
+plugin asks git itself which folder it uses (the `rev-parse` above, which
+reads no attributes and starts no filter) rather than guessing, and where
+that folder holds the file, `status` doesn't run and the pane says why.
+Cloning never writes it.
 
 What is still possible: git reads the repository's and your own git config,
 so anything `git status` starts that none of the settings above turn off
@@ -260,7 +270,7 @@ when it has to re-read a file whose timestamps changed but size didn't. Then
 the pane says git can't skip the repository's filters; otherwise it lists
 the changes. Either way no filter runs.
 
-Apart from that one command, the plugin runs nothing, never writes your
+Apart from those two git commands, the plugin runs nothing, never writes your
 files or touches the network, never reads your Claude Code settings, and
 nothing is sent until you press Enter on the prompt yourself.
 
@@ -319,7 +329,7 @@ changes what Claude or its tools do; they only add the pane.
 
 Engine calls it makes: `$.command.register` (the `/files` command),
 `$.fs.list` and `$.fs.stat` (folder listings and file types; project search is `$.fs.list` alone, one folder per call; `r` checks each recent file still exists with `$.fs.stat`; `g` also stats `.git` in the working directory and each folder above it to find the repository root),
-`$.process.run` (only the one `git status` command above, only when you press `g`; its flags and `GIT_ATTR_NOSYSTEM` keep `.gitattributes` and the global and system attributes files from starting filters; and it won't run at all where `.git/info/attributes` exists, as Safety explains),
+`$.process.run` (only the two git commands above, only when you press `g`; their flags and `GIT_ATTR_NOSYSTEM` keep `.gitattributes` and the global and system attributes files from starting filters, and `status` doesn't run where the git folder holds `info/attributes`, as Safety explains),
 `$.fs.read` (the file you press `l` on, up to 4 MiB, and with the preview on,
 the highlighted file, up to 64 KiB), `$.clock.after` (waits 120 ms for the
 arrows to rest before the preview reads),
