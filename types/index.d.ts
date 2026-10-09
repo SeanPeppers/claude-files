@@ -21,6 +21,7 @@ declare module "claude-code" {
       peek: boolean;
       peeked: number;
       changes: boolean;
+      feedback: string;
     };
   }
 }

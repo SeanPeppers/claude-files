@@ -5,9 +5,11 @@ import {
   baseName,
   commonDirFrom,
   displayName,
+  feedbackUrl,
   findLine,
   fitCells,
   fitCellsStart,
+  fitsAfter,
   GIT_ATTRIBUTES_NOTE,
   gitCommonDirCall,
   gitFailNote,
@@ -45,6 +47,7 @@ import {
   relativeTo,
   resolveTyped,
   ringAfterToggle,
+  scrubMessage,
   toggleMark,
   WALK_MAX_DEPTH,
   WALK_MAX_FILES,
@@ -60,6 +63,8 @@ const MORE_ABOVE = "more:above";
 const MORE_BELOW = "more:below";
 const MARK_AGAIN = "mark:again";
 const FILES_AGAIN = "files:again";
+// The feedback button as the footer draws it, for counting where it fits.
+const FEEDBACK_LABEL = "t: feedback";
 // List: header, filter box (3), '..' (or search's limits line), the two "more"
 // rows, the footer with its margin, hint; a footer that wraps takes more
 // (wrappedRows). Lines: header, status, find box (3), the two "more" rows,
@@ -114,6 +119,9 @@ const PEEK_STATE = { plugin: "file-picker", key: "peek" } as const;
 const PEEKED_STATE = { plugin: "file-picker", key: "peeked" } as const;
 // Whether that list is git's changed files instead of the whole project.
 const CHANGES_STATE = { plugin: "file-picker", key: "changes" } as const;
+// The view the Feedback screen was opened from (`none` for `/files bug`), or
+// '' when it isn't shown.
+const FEEDBACK_STATE = { plugin: "file-picker", key: "feedback" } as const;
 
 // Rows of the list or of the file that fit in the pane, as last drawn. Both
 // are drawn a window at a time: a pane taller than its tree takes the arrows
@@ -157,6 +165,10 @@ let peekFits = 0;
 let peekTimer: { cancel: () => void } | undefined;
 let peekTicket = 0;
 const PEEK_DELAY_MS = 120;
+// The last message the pane showed, names and paths scrubbed, for a bug report
+// to quote; and the row the Feedback screen's back button returns the ring to.
+let lastMessage = "";
+let feedbackRing = "";
 
 type State = PluginState["file-picker"];
 const INITIAL: State = {
@@ -180,6 +192,7 @@ const INITIAL: State = {
   peek: false,
   peeked: 0,
   changes: false,
+  feedback: "",
 };
 
 // The plugin directory lets `$` go only to functions declared in this file,
@@ -327,6 +340,13 @@ async function heldState<K extends keyof State>(
       const held = await $.state.get(CHANGES_STATE);
       return {
         value: (held.value ?? INITIAL.changes) as State[K],
+        version: held.version,
+      };
+    }
+    case "feedback": {
+      const held = await $.state.get(FEEDBACK_STATE);
+      return {
+        value: (held.value ?? INITIAL.feedback) as State[K],
         version: held.version,
       };
     }
@@ -481,6 +501,13 @@ async function writeState<K extends keyof State>(
       });
       return done.isSet;
     }
+    case "feedback": {
+      const next = value as State["feedback"];
+      const done = await $.state.set(FEEDBACK_STATE, next, {
+        ifVersion: version,
+      });
+      return done.isSet;
+    }
   }
   throw new Error(`unknown state ${key}`);
 }
@@ -502,6 +529,17 @@ async function updateState<K extends keyof State>(
     if (await writeState($, key, next(held.value), held.version)) return;
   }
   throw new Error(`state ${key} kept changing`);
+}
+
+// Every toast goes through here, so a bug report can quote the last one; the
+// `names` it shows (files, folders, typed text) are left out of that quote.
+async function showToast(
+  $: EngineInterface,
+  text: string,
+  names: string[] = [],
+) {
+  lastMessage = scrubMessage(text, names);
+  await $.ui.toast(text);
 }
 
 const rowKey = (name: string) => `row:${name}`;
@@ -901,18 +939,23 @@ async function pick(
   const cwd = await $.session.cwd();
   const mention = mentionsFor(path, cwd, ranges);
   if (!mention) {
-    await $.ui.toast(
-      `Not added: ${displayName(baseName(path))} can't be mentioned safely (a quote, a control character or a #L in its name could change what the prompt says)`,
+    const name = displayName(baseName(path));
+    await showToast(
+      $,
+      `Not added: ${name} can't be mentioned safely (a quote, a control character or a #L in its name could change what the prompt says)`,
+      [name],
     );
     return false;
   }
   const filled = await $.prompt
     .fill({ text: mention, mode: "insert" })
     .catch(() => ({ isFilled: false }));
-  $.ui.toast(
+  void showToast(
+    $,
     filled.isFilled
       ? `Added ${mention.trim()}`
       : `Could not add ${displayName(path)} to the prompt`,
+    [mention.trim(), displayName(path)],
   );
   return filled.isFilled;
 }
@@ -982,10 +1025,12 @@ async function cancelConfirm($: EngineInterface) {
 async function openPath($: EngineInterface, path: string) {
   const file = await resolveFile($, path);
   if (!file || file.stat.kind === "other")
-    return $.ui.toast(
+    return showToast(
+      $,
       file
         ? `Not a regular file: ${displayName(path)}`
         : `No such path: ${displayName(path)}`,
+      [displayName(path)],
     );
   if (file.stat.kind === "dir") return goTo($, path);
   if (await confirmFirst($, path, file, "add")) return;
@@ -997,22 +1042,25 @@ async function openPath($: EngineInterface, path: string) {
 async function openLines($: EngineInterface, path: string) {
   const file = await resolveFile($, path);
   if (file?.stat.kind !== "file")
-    return $.ui.toast(`Only files open line by line: ${displayName(path)}`);
+    return showToast($, `Only files open line by line: ${displayName(path)}`, [
+      displayName(path),
+    ]);
   if (await confirmFirst($, path, file, "lines")) return;
   await clearConfirm($);
   const target = file.mentionPath;
+  const name = displayName(baseName(target));
   let text: string;
   try {
     text = await $.fs.read(file.real);
   } catch {
-    return $.ui.toast(
-      `Can't show ${displayName(baseName(target))} line by line (unreadable or over 4 MiB); Enter adds the whole file`,
+    return showToast(
+      $,
+      `Can't show ${name} line by line (unreadable or over 4 MiB); Enter adds the whole file`,
+      [name],
     );
   }
   if (isBinaryText(text))
-    return $.ui.toast(
-      `${displayName(baseName(target))} is binary; Enter adds the whole file`,
-    );
+    return showToast($, `${name} is binary; Enter adds the whole file`, [name]);
   const lines = text === "" ? [] : text.split("\n");
   if (lines.length > 1 && lines.at(-1) === "") lines.pop();
   previewLines = { path: target, lines };
@@ -1049,7 +1097,7 @@ async function pressLine($: EngineInterface, n: number) {
     await updateState($, "focusLine", () => n);
     const kept = await readState($, "kept");
     await setRanges($, n, kept, n);
-    return $.ui.toast(`Range starts at line ${n}: Enter on the last line`);
+    return showToast($, `Range starts at line ${n}: Enter on the last line`);
   }
   return insertRanges($, rangeOf(anchor, n), n);
 }
@@ -1124,7 +1172,10 @@ async function findInLines($: EngineInterface, query: string) {
       ? lastFind
       : offset - 1;
   const index = findLine(previewLines.lines, query, from);
-  if (index < 0) return $.ui.toast(`Not found: ${displayName(query)}`);
+  if (index < 0)
+    return showToast($, `Not found: ${displayName(query)}`, [
+      displayName(query),
+    ]);
   lastFind = index;
   await updateState($, "lineOffset", () =>
     windowAround(index, offset, lineRows, previewLines?.lines.length ?? 0),
@@ -1135,7 +1186,7 @@ async function findInLines($: EngineInterface, query: string) {
 async function linesOfFocused($: EngineInterface) {
   if (focusedKey.startsWith("hit:")) return openLines($, focusedKey.slice(4));
   if (!focusedKey.startsWith("row:") || focusedKey === PARENT_KEY)
-    return $.ui.toast("Arrow onto a file first, then press l");
+    return showToast($, "Arrow onto a file first, then press l");
   const dir = await currentDir($);
   return openLines($, joinPath(dir, focusedKey.slice(4)));
 }
@@ -1149,14 +1200,15 @@ async function markFocused($: EngineInterface) {
     return setMarks($, toggleMark(await readState($, "marked"), path));
   }
   if (!focusedKey.startsWith("row:") || focusedKey === PARENT_KEY)
-    return $.ui.toast("Arrow onto a file first, then press m");
+    return showToast($, "Arrow onto a file first, then press m");
   const dir = await currentDir($);
   const name = focusedKey.slice(4);
   const entry = (await listDir($, dir).catch((): Entry[] => [])).find(
     (listed) => listed.name === name,
   );
   if (entry?.kind === "dir")
-    return $.ui.toast(
+    return showToast(
+      $,
       "Folders can't be marked: open one and press a to add it",
     );
   const marks = await readState($, "marked");
@@ -1225,9 +1277,10 @@ async function insertMarked($: EngineInterface) {
     } else skipped.push(`${name} (name can't be mentioned safely)`);
   }
   const skips = skipped.length ? `Skipped ${skipped.join(", ")}` : "";
+  const names = marks.map((path) => displayName(baseName(path)));
   if (mentions.size === 0) {
     await setMarks($, []);
-    return $.ui.toast(`Nothing added. ${skips}`);
+    return showToast($, `Nothing added. ${skips}`, names);
   }
   const text = [...mentions].join("");
   const filled = await $.prompt
@@ -1235,11 +1288,13 @@ async function insertMarked($: EngineInterface) {
     .catch(() => ({ isFilled: false }));
   // The marks stay when the fill fails, so the person can try again.
   if (!filled.isFilled)
-    return $.ui.toast("Could not add the marked files to the prompt");
+    return showToast($, "Could not add the marked files to the prompt");
   await setMarks($, []);
   await rememberRecent($, added);
-  $.ui.toast(
+  void showToast(
+    $,
     `Added ${mentions.size} ${mentions.size === 1 ? "file" : "files"}${skips ? `. ${skips}` : ""}`,
+    names,
   );
 }
 
@@ -1312,17 +1367,38 @@ async function togglePeek($: EngineInterface) {
   await schedulePeek($);
 }
 
+// `t`: the Feedback screen, over the view `from`; back returns the ring to
+// `ring`, the row it was on.
+async function openFeedback($: EngineInterface, from: string, ring: string) {
+  feedbackRing = ring;
+  await updateState($, "feedback", () => from);
+  await focusFirst($, ["feedback:back"]);
+}
+
+async function closeFeedback($: EngineInterface) {
+  const from = await readState($, "feedback");
+  await updateState($, "feedback", () => "");
+  await focusFirst($, [feedbackRing, from === "lines" ? "find" : "filter"]);
+}
+
 export const register: Register = (on) => {
   on("session.start", async ($, e, next) => {
     await $.command.register({
       name: "files",
       description:
         "Browse files in a pane; Enter adds a file to the prompt, l picks lines",
+      argumentHint: "[bug|idea]",
     });
     return next(e);
   });
 
-  on("command.run", { command: "files" }, async ($) => {
+  on("command.run", { command: "files" }, async ($, e) => {
+    // `/files bug` and `/files idea` open straight to the Feedback screen.
+    const asked = (e.args ?? "").trim().toLowerCase();
+    feedbackRing = "";
+    await updateState($, "feedback", () =>
+      asked === "bug" || asked === "idea" ? "none" : "",
+    );
     // The filter box opens empty, so the list must too.
     await updateState($, "query", () => "");
     await clearConfirm($);
@@ -1370,7 +1446,7 @@ export const register: Register = (on) => {
     const ui = $.ui.resolve(e);
     const compact = e.props.scroll.bodyRows < COMPACT_BELOW_ROWS;
     const saved = compact ? COMPACT_SAVES_ROWS : 0;
-    const { Box, Text, Button } = ui;
+    const { Box, Text, Button, Link } = ui;
     const Input = "Input" in ui ? ui.Input : undefined;
     const cwd = await $.session.cwd();
     const confirm = await readState($, "confirm");
@@ -1421,6 +1497,46 @@ export const register: Register = (on) => {
       );
     }
 
+    const feedbackFrom = await readState($, "feedback");
+    if (feedbackFrom) {
+      const engine = await $.session.version();
+      const facts = {
+        claude: engine.version,
+        surface: e.surface,
+        pane: `${e.props.bodyColumns}x${e.props.scroll.bodyRows}`,
+        view: feedbackFrom,
+        message: lastMessage,
+      };
+      return (
+        <Box flexDirection="column" gap={compact ? 0 : 1}>
+          <Text bold color="claude">
+            Feedback
+          </Text>
+          <Text>
+            <Link href={feedbackUrl("bug", facts)}>Report a bug</Link>
+          </Text>
+          <Text>
+            <Link href={feedbackUrl("idea", facts)}>Suggest a feature</Link>
+          </Text>
+          <Text dimColor>
+            Each opens a new issue form on github.com in your browser, with the
+            versions and pane details filled in (no file names or paths).
+            Nothing is sent until you submit it there.
+          </Text>
+          <Button
+            key="feedback:back"
+            plain
+            hotkey="f"
+            dimColor
+            autoFocus
+            onPress={() => closeFeedback($)}
+          >
+            back
+          </Button>
+        </Box>
+      );
+    }
+
     const preview = await readState($, "preview");
     if (preview && previewLines?.path === preview) {
       const anchor = await readState($, "anchor");
@@ -1461,6 +1577,18 @@ export const register: Register = (on) => {
       };
       lineRowsAfter = rowsWith;
       lineRows = rowsWith({ anchored: anchor > 0, kept: kept.length });
+      // The footer as drawn, which the feedback button goes after where it fits.
+      const feedbackFits = fitsAfter(
+        [
+          "f: files",
+          "w: whole file",
+          ...(range ? ["k: keep range"] : []),
+          ...(anchor > 0 || kept.length > 0 ? [`x: ${clearLabel}`] : []),
+          ...(kept.length > 0 ? [`i: ${insertLabel}`] : []),
+        ],
+        FEEDBACK_LABEL,
+        e.props.bodyColumns,
+      );
       const lines = previewLines.lines;
       const status =
         range && range.start !== range.end
@@ -1620,6 +1748,17 @@ export const register: Register = (on) => {
                 {insertLabel}
               </Button>
             )}
+            {feedbackFits && (
+              <Button
+                key="feedback"
+                plain
+                hotkey="t"
+                dimColor
+                onPress={() => openFeedback($, "lines", focusedKey)}
+              >
+                feedback
+              </Button>
+            )}
           </Box>
           {!compact && (
             <Text dimColor wrap="truncate-end">
@@ -1670,6 +1809,8 @@ export const register: Register = (on) => {
         {peekLabel}
       </Button>
     );
+    // The feedback button goes after the footer as drawn where it fits.
+    let listFeedbackFits = false;
     // The list's rows under the footer `labelsFor` draws (one row is in the
     // chrome; a narrow pane wraps more): what the pane leaves it, less the
     // preview's share when the preview is on and fits. Worked out for any
@@ -1687,6 +1828,11 @@ export const register: Register = (on) => {
       listRowsAfter = (change) => rowsWith({ ...now, ...change }).rows;
       const drawn = rowsWith(now);
       peekFits = drawn.fits;
+      listFeedbackFits = fitsAfter(
+        labelsFor(now),
+        FEEDBACK_LABEL,
+        e.props.bodyColumns,
+      );
       return drawn.rows;
     };
     // The last file stays up while the read for the next row waits, so the
@@ -1933,6 +2079,19 @@ export const register: Register = (on) => {
                 {`insert ${marked.length} marked`}
               </Button>
             )}
+            {listFeedbackFits && (
+              <Button
+                key="feedback"
+                plain
+                hotkey="t"
+                dimColor
+                onPress={() =>
+                  openFeedback($, recentView ? "recent" : "search", focusedKey)
+                }
+              >
+                feedback
+              </Button>
+            )}
           </Box>
           {!compact && (
             <Text dimColor wrap="truncate-end">
@@ -1951,6 +2110,10 @@ export const register: Register = (on) => {
     try {
       listed = await listDir($, dir);
     } catch (err) {
+      lastMessage = scrubMessage(
+        `Cannot list ${displayName(dir)}: ${displayName(String(err))}`,
+        [displayName(dir)],
+      );
       return (
         <Box flexDirection="column" gap={1}>
           <Text color="error">
@@ -2198,6 +2361,17 @@ export const register: Register = (on) => {
               onPress={() => insertMarked($)}
             >
               {`insert ${marked.length} marked`}
+            </Button>
+          )}
+          {listFeedbackFits && (
+            <Button
+              key="feedback"
+              plain
+              hotkey="t"
+              dimColor
+              onPress={() => openFeedback($, "folder", focusedKey)}
+            >
+              feedback
             </Button>
           )}
         </Box>
