@@ -60,14 +60,23 @@ for (const [COLUMNS, BODY_ROWS] of [
       const kind = path.endsWith("/.git") ? "dir" : "file";
       return { value: { kind, size: 1, mtimeMs: 0, isLink: false } };
     });
-    on("process.run", () => ({
-      value: {
-        exitCode: 0,
-        stdout: NAMES.map((name) => `?? ${name}\0`).join(""),
-        stderr: "",
-        isStdoutTruncated: false,
-        isStderrTruncated: false,
-      },
+    on("fs.exists", () => ({ value: false }));
+    on("process.run", (_: any, e: any) => ({
+      value: e.argv.includes("rev-parse")
+        ? {
+            exitCode: 0,
+            stdout: "/p/.git\n",
+            stderr: "",
+            isStdoutTruncated: false,
+            isStderrTruncated: false,
+          }
+        : {
+            exitCode: 0,
+            stdout: NAMES.map((name) => `?? ${name}\0`).join(""),
+            stderr: "",
+            isStdoutTruncated: false,
+            isStderrTruncated: false,
+          },
     }));
     on("ui.focus", () => ({}));
     on("ui.toast", () => ({ value: undefined }));

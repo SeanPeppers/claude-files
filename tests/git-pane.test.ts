@@ -23,6 +23,7 @@ type Opts = {
   attributes?: string;
   common?: string;
   commonExit?: number;
+  commonKind?: "dir" | "file" | "missing";
 };
 
 function wire(
@@ -40,8 +41,9 @@ function wire(
     dirs = [],
     links = {},
     attributes,
-    common = "/p/.git",
+    common = gitAt,
     commonExit = 0,
+    commonKind = "dir",
   }: Opts = {},
 ) {
   const log = {
@@ -75,6 +77,12 @@ function wire(
       return { value: { kind: gitKind, size: 0, mtimeMs: 0, isLink: false } };
     if (path === cwd || path === "/p" || dirs.includes(path))
       return { value: { kind: "dir", size: 0, mtimeMs: 0, isLink: false } };
+    if (path === common) {
+      if (commonKind === "missing") throw new Error("ENOENT");
+      return {
+        value: { kind: commonKind, size: 0, mtimeMs: 0, isLink: false },
+      };
+    }
     if (path.endsWith(".git")) throw new Error("ENOENT");
     if (path.endsWith("/info/attributes") && path !== attributes)
       throw new Error("ENOENT");
@@ -126,6 +134,9 @@ function wire(
       },
     };
   });
+  on("fs.exists", (_: any, e: any) => ({
+    value: posix(e.path) === attributes,
+  }));
   on("fs.read", () => ({ value: "one\ntwo\nthree\n" }));
   on("ui.focus", () => ({ value: {} }));
   on("ui.open", () => ({ value: undefined }));
@@ -334,13 +345,19 @@ for (const [COLUMNS, BODY_ROWS] of [
   });
 
 test("a .git file (worktree or submodule) marks the root; the walk up stops there", async ($, on) => {
-  const log = wire(on, { cwd: "/p/a/b", gitAt: "/p/.git", gitKind: "file" });
+  const log = wire(on, {
+    cwd: "/p/a/b",
+    gitAt: "/p/.git",
+    gitKind: "file",
+    common: "/main/.git",
+  });
   const ui = await mount($);
   await ui.press({ key: "changes" });
   expect(await until(ui, { key: "hit:/p/src/a.ts" })).toBe(true);
   expect(log.runs.map((run) => run.cwd)).toEqual(["/p"]);
   const gits = log.stats.filter((path) => path.endsWith(".git"));
-  expect(gits).toEqual(["/p/a/b/.git", "/p/a/.git", "/p/.git"]);
+  // The last is git's own folder, checked for info/attributes.
+  expect(gits).toEqual(["/p/a/b/.git", "/p/a/.git", "/p/.git", "/main/.git"]);
   await ui.unmount();
 });
 
@@ -825,6 +842,40 @@ test("the git dir is checked as git names it, spaces kept", async ($, on) => {
   await ui.press({ key: "changes" });
   expect(
     await until(ui, { text: /info\/attributes could start a git filter/ }),
+  ).toBe(true);
+  expect(log.runs).toEqual([]);
+  await ui.unmount();
+});
+
+test("a CR git kept in its dir's name is kept in the check", async ($, on) => {
+  const log = wire(on, {
+    common: "/p/evil\r",
+    attributes: "/p/evil\r/info/attributes",
+  });
+  const ui = await mount($);
+  await ui.press({ key: "changes" });
+  expect(
+    await until(ui, { text: /info\/attributes could start a git filter/ }),
+  ).toBe(true);
+  expect(log.runs).toEqual([]);
+  await ui.unmount();
+});
+
+test("a git dir the plugin can't see as a folder keeps status from running", async ($, on) => {
+  const missing = wire(on, { common: "/gone/.git", commonKind: "missing" });
+  const ui = await mount($);
+  await ui.press({ key: "changes" });
+  expect(await until(ui, { text: /Couldn't run git/ })).toBe(true);
+  expect(missing.runs).toEqual([]);
+  await ui.unmount();
+});
+
+test("a git dir that is a file keeps status from running", async ($, on) => {
+  const log = wire(on, { common: "/p/odd", commonKind: "file" });
+  const ui = await mount($);
+  await ui.press({ key: "changes" });
+  expect(
+    await until(ui, { text: "git named a git folder that isn't one" }),
   ).toBe(true);
   expect(log.runs).toEqual([]);
   await ui.unmount();

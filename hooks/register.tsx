@@ -528,9 +528,12 @@ async function gitRefusal($: EngineInterface, root: string) {
     if (ran.exitCode !== 0) return gitFailNote(ran.exitCode, ran.stderr);
     const common = commonDirFrom(ran.stdout);
     if (!common) return "git didn't say which folder it uses";
+    // Fails closed: a folder the plugin can't see as git named it is refused.
+    const commonStat = await $.fs.stat(common);
+    if (commonStat.kind !== "dir")
+      return "git named a git folder that isn't one";
     const attributes = joinPath(joinPath(common, "info"), "attributes");
-    const found = await $.fs.stat(attributes).catch(() => undefined);
-    if (found) return GIT_ATTRIBUTES_NOTE;
+    if (await $.fs.exists(attributes)) return GIT_ATTRIBUTES_NOTE;
     return "";
   } catch (err) {
     return `Couldn't run git: ${err instanceof Error ? err.message : String(err)}`;

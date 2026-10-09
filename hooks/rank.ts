@@ -718,9 +718,9 @@ export const gitStatusCall = (root: string) =>
 export const gitCommonDirCall = (root: string) =>
   gitCall(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
 
-// rev-parse's answer: git ends it with one newline and keeps every other
-// character, spaces included.
-export const commonDirFrom = (stdout: string) => stdout.replace(/\r?\n$/, "");
+// rev-parse's answer: git ends it with one LF on every platform and keeps
+// every other character, spaces and a CR before the LF included.
+export const commonDirFrom = (stdout: string) => stdout.replace(/\n$/, "");
 
 // The files `git status --porcelain=v1 -z` names, as hits under the
 // repository `root`. Each record is `XY path`, NUL-ended, and a rename or copy
