@@ -2126,10 +2126,10 @@ export const register: Register = (on) => {
     try {
       listed = await listDir($, dir);
     } catch (err) {
-      lastMessage = scrubMessage(
-        `Cannot list ${displayName(dir)}: ${displayName(String(err))}`,
-        [displayName(dir)],
-      );
+      // Only the error's code goes in the report: the engine's text can name
+      // paths the scrubber isn't told about.
+      const code = /\bE[A-Z]{2,}\b/.exec(String(err));
+      lastMessage = `Cannot list <path>: ${code ? code[0] : "error"}`;
       return (
         <Box flexDirection="column" gap={1}>
           <Text color="error">
