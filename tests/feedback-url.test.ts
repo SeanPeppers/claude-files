@@ -186,6 +186,27 @@ test("scrubMessage and feedbackUrl stay fast on a long run with no spaces", asyn
   expect(Date.now() - started).toBeLessThan(2_000);
 });
 
+// Nested openers, quotes that never close and paths chained by ", ": each
+// character is looked at a bounded number of times.
+test("scrubMessage stays fast on paths that never close", async () => {
+  const started = Date.now();
+  for (const unit of ["(x", "'/", "/a, ", "(/", '@"'])
+    scrubMessage(unit.repeat(50_000));
+  expect(Date.now() - started).toBeLessThan(2_000);
+});
+
+test("scrubMessage: a path not among the names goes whole, spaces and all", async () => {
+  expect(
+    scrubMessage(
+      "Cannot list /p/link: EACCES: permission denied, scandir /srv/Top Secret Merger/q3",
+      ["/p/link"],
+    ),
+  ).toBe("Cannot list <path>: EACCES: permission denied, scandir <path>");
+  expect(
+    scrubMessage("ENOENT: no such file or directory, open '/srv/Bob's Plan'"),
+  ).toBe("ENOENT: no such file or directory, open '<path>'");
+});
+
 test("scrubMessage: apostrophes in words are not quotes", async () => {
   const toast =
     "Skipped Budget (name can't be mentioned safely), Plan (name can't be mentioned safely)";
@@ -195,4 +216,69 @@ test("scrubMessage: apostrophes in words are not quotes", async () => {
   expect(scrubMessage("Folders can't be marked: open one and press a")).toBe(
     "Folders can't be marked: open one and press a",
   );
+});
+
+// Random paths from every root, of names with spaces, unicode, apostrophes,
+// brackets and (inside a path) ", " and ": ", put in the shapes the pane's
+// messages and engine errors take: no word of any name may survive.
+test("scrubMessage: no fragment of a rooted path survives, whatever its names", async () => {
+  const LAST = [
+    "Zebra Quokka",
+    "Merger (Vole)",
+    "Bobcat's Yak",
+    "名前 ファイル",
+    "naïve café",
+    "Okapi[7]",
+    "Emu's ‘Kiwi’",
+    "Tapir.v2 final",
+  ];
+  const MIDDLE = [...LAST, "Gnu, Ibex", "Lynx: Puma"];
+  const ROOTS: [string, string][] = [
+    ["/", "/"],
+    ["~/", "/"],
+    ["~", "/"],
+    ["./", "/"],
+    ["../", "/"],
+    ["C:\\", "\\"],
+    ["D:/", "/"],
+    ["\\\\server\\share\\", "\\"],
+  ];
+  const SHAPES = [
+    (p: string) => `Cannot list ${p}: EACCES: permission denied, scandir ${p}`,
+    (p: string) => `ENOENT: no such file or directory, open '${p}'`,
+    (p: string) => `Not a regular file: ${p}`,
+    (p: string) => `Could not add ${p} to the prompt`,
+    (p: string) => `Error: x ("${p}")`,
+    (p: string) => `copy (${p}), done`,
+    (p: string) => `see “${p}” now`,
+    (p: string) => `Added @"${p}"`,
+    (p: string) => `No such path: ${p}`,
+  ];
+  // mulberry32: the same cases on every run.
+  let seed = 0x5eed;
+  const random = () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const pick = <T>(list: readonly T[]) =>
+    list[Math.floor(random() * list.length)] as T;
+  for (let n = 0; n < 2_000; n++) {
+    const [root, sep] = pick(ROOTS);
+    const depth = 1 + Math.floor(random() * 3);
+    const names = [
+      ...Array.from({ length: depth - 1 }, () => pick(MIDDLE)),
+      pick(LAST),
+    ];
+    const path = root + names.join(sep);
+    const scrubbed = scrubMessage(pick(SHAPES)(path));
+    for (const word of names.join(" ").match(/[\p{L}\p{N}]{2,}/gu) ?? [])
+      expect([path, scrubbed, word, scrubbed.includes(word)]).toEqual([
+        path,
+        scrubbed,
+        word,
+        false,
+      ]);
+  }
 });

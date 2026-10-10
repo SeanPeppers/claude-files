@@ -230,10 +230,13 @@ Found a bug or have an idea? Press `t` in the pane, or type `/files bug` or
   version, the Claude Code version, where it runs (terminal, desktop, ...),
   the pane's size, the view you were in (folder, search, recent, changes,
   lines, `confirm` for the secrets question or `error` for a folder that
-  can't be listed)
-  and the last message the pane showed already filled in. File names,
-  paths and anything you typed are taken out of that message (they read
-  `<path>`), and the link never carries file contents or your prompt.
+  can't be listed) and the last message the pane showed already filled in.
+  File names, paths and anything you typed are taken out of that message
+  (they read `<path>`). A path goes whole, spaces included: from the word
+  that starts it (one holding `/` or `\`, as in `/srv`, `C:\` or
+  `\\server`, or starting with `~`) to the quote, bracket, `: `, `, ` or
+  end that closes it; where that is unclear, more goes rather than less.
+  The link never carries file contents or your prompt.
 - **Suggest a feature** opens the feature form with the two versions filled in.
 
 Clicking a link opens it in your browser; nothing is sent until you submit

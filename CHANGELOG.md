@@ -12,8 +12,8 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   screen with two links to GitHub issue forms (added under
   `.github/ISSUE_TEMPLATE`). Report a bug fills in the plugin and Claude
   Code versions (`$.session.version`), the surface, the pane size, the view
-  and the pane's last message, with file names, paths and typed text taken
-  out; Suggest a feature fills in the versions. The plugin opens no
+  and the pane's last message, with file names, paths (whole, spaces
+  included) and typed text taken out; Suggest a feature fills in the versions. The plugin opens no
   connection: the links open in the browser only when clicked, and nothing
   is sent until the form is submitted on GitHub. `t` works in every view,
   the git changes list, the secrets question and a folder that can't be

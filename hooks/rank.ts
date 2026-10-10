@@ -831,24 +831,95 @@ export const LINK_MAX = 2048;
 // A version or a size longer than this is no version or size.
 const FACT_MAX = 100;
 
-// `text` with every name in `names` and anything that looks like a path (a
-// separator, an @mention, a file extension) put as <path>, so a pane message
-// can go into a public bug report. An @mention goes whole, to its closing
-// quote when quoted; apostrophes in words are left alone, since the pane
-// quotes names only in @"..." mentions.
+// What a quote or bracket right before a path closes with.
+const PATH_CLOSERS: Record<string, string> = {
+  "'": "'",
+  '"': '"',
+  "`": "`",
+  "(": ")",
+  "[": "]",
+  "\u2018": "\u2019",
+  "\u201C": "\u201D",
+};
+// A closer counts only before the end, punctuation or (for a quote) a space,
+// so an apostrophe or a bracket inside a name (Bob's, Merger (old) q3) doesn't
+// end the path early.
+const QUOTE_CLOSES_AT = /^(?:$|[\s,.;:)\]])/;
+const BRACKET_CLOSES_AT = /^(?:$|[,.;:)\]])/;
+// Where an unquoted path ends: the ": ", ", " or "; " the pane's messages put
+// after one, or a line break.
+const PATH_END = /: |, |; |\n/g;
+const SEPARATOR = /[\\/]/;
+const WORD = /\S*/y;
+
+// Where the path starting at `i` ends. After a quote or bracket, at its
+// closer. Otherwise at the next delimiter, unless the text up to the one
+// after holds a separator too: a name may hold ", " or ": ", so the path runs
+// on rather than leave a piece of it behind.
+const pathEndFrom = (text: string, i: number) => {
+  const closer = PATH_CLOSERS[text[i - 1] ?? ""];
+  if (closer) {
+    const closes = /[)\]]/.test(closer) ? BRACKET_CLOSES_AT : QUOTE_CLOSES_AT;
+    let at = text.indexOf(closer, i);
+    while (at >= 0 && !closes.test(text.slice(at + 1, at + 2)))
+      at = text.indexOf(closer, at + 1);
+    return at < 0 ? text.length : at;
+  }
+  PATH_END.lastIndex = i;
+  for (let end = PATH_END.exec(text); end; ) {
+    const after = end.index + end[0].length;
+    PATH_END.lastIndex = after;
+    const next = PATH_END.exec(text);
+    const chunk = text.slice(after, next ? next.index : text.length);
+    if (end[0] === "\n" || !SEPARATOR.test(chunk)) return end.index;
+    end = next;
+  }
+  return text.length;
+};
+
+// `text` with every name in `names` and anything that looks like a path put
+// as <path>, so a pane message can go into a public bug report. It fails
+// closed: a word holding a separator, or starting with ~, starts a path that
+// runs to a clear end (see pathEndFrom) even through spaces; an @mention goes
+// whole, to its closing quote when quoted; and any word left with @ or a file
+// extension goes too. Apostrophes in words are left alone: the pane quotes
+// names only in @"..." mentions.
 export const scrubMessage = (text: string, names: readonly string[] = []) => {
   let out = text;
   // Longest first, so a name that starts another can't leave the rest behind.
   const longestFirst = [...names].sort((a, b) => b.length - a.length);
   for (const name of longestFirst)
     if (name) out = out.split(name).join("<path>");
+  out = out.replace(/@"[^"]*"?|@'[^']*'?/g, "<path>");
+  let rooted = "";
+  let copied = 0;
+  // A word with no separator has none in its tail either (a quote or bracket
+  // inside it starts a new word there), so the scan skips it whole: each
+  // character is looked at a bounded number of times.
+  for (let i = 0; i < out.length; ) {
+    const c = out[i] ?? "";
+    const before = out[i - 1];
+    const starts =
+      !(c in PATH_CLOSERS) &&
+      (before === undefined || /[\s=>]/.test(before) || before in PATH_CLOSERS);
+    if (!starts) {
+      i++;
+      continue;
+    }
+    WORD.lastIndex = i;
+    const word = WORD.exec(out)?.[0] ?? "";
+    if (c === "~" || SEPARATOR.test(word)) {
+      rooted += `${out.slice(copied, i)}<path>`;
+      i = pathEndFrom(out, i);
+      copied = i;
+    } else i += Math.max(1, word.length);
+  }
+  rooted += out.slice(copied);
   // Word by word: one regex over the whole text backtracks quadratically on a
   // long run with no spaces.
-  return out
-    .replace(/@"[^"]*"?|@'[^']*'?/g, "<path>")
-    .replace(/\S+/g, (word) =>
-      /[\\/@~]|\.[A-Za-z0-9]{1,10}\b/.test(word) ? "<path>" : word,
-    );
+  return rooted.replace(/\S+/g, (word) =>
+    /[\\/@~]|\.[A-Za-z0-9]{1,10}\b/.test(word) ? "<path>" : word,
+  );
 };
 
 export type FeedbackFacts = {
