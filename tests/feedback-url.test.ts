@@ -185,3 +185,14 @@ test("scrubMessage and feedbackUrl stay fast on a long run with no spaces", asyn
   expect(url.length).toBeLessThanOrEqual(LINK_MAX);
   expect(Date.now() - started).toBeLessThan(2_000);
 });
+
+test("scrubMessage: apostrophes in words are not quotes", async () => {
+  const toast =
+    "Skipped Budget (name can't be mentioned safely), Plan (name can't be mentioned safely)";
+  expect(scrubMessage(toast, ["Budget", "Plan"])).toBe(
+    "Skipped <path> (name can't be mentioned safely), <path> (name can't be mentioned safely)",
+  );
+  expect(scrubMessage("Folders can't be marked: open one and press a")).toBe(
+    "Folders can't be marked: open one and press a",
+  );
+});

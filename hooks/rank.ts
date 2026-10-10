@@ -832,8 +832,10 @@ export const LINK_MAX = 2048;
 const FACT_MAX = 100;
 
 // `text` with every name in `names` and anything that looks like a path (a
-// separator, an @mention, a quoted name, a file extension) put as <path>, so
-// a pane message can go into a public bug report.
+// separator, an @mention, a file extension) put as <path>, so a pane message
+// can go into a public bug report. An @mention goes whole, to its closing
+// quote when quoted; apostrophes in words are left alone, since the pane
+// quotes names only in @"..." mentions.
 export const scrubMessage = (text: string, names: readonly string[] = []) => {
   let out = text;
   // Longest first, so a name that starts another can't leave the rest behind.
@@ -843,7 +845,7 @@ export const scrubMessage = (text: string, names: readonly string[] = []) => {
   // Word by word: one regex over the whole text backtracks quadratically on a
   // long run with no spaces.
   return out
-    .replace(/@?"[^"]*"|@?'[^']*'/g, "<path>")
+    .replace(/@"[^"]*"?|@'[^']*'?/g, "<path>")
     .replace(/\S+/g, (word) =>
       /[\\/@~]|\.[A-Za-z0-9]{1,10}\b/.test(word) ? "<path>" : word,
     );
