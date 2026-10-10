@@ -8,6 +8,18 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Feedback: `t` in the pane, or `/files bug` and `/files idea`, opens a
+  screen with two links to GitHub issue forms (added under
+  `.github/ISSUE_TEMPLATE`). Report a bug fills in the plugin and Claude
+  Code versions (`$.session.version`), the surface, the pane size, the view
+  and the pane's last message, with file names, paths (whole, spaces
+  included) and typed text taken out; Suggest a feature fills in the versions. The plugin opens no
+  connection: the links open in the browser only when clicked, and nothing
+  is sent until the form is submitted on GitHub. `t` works in every view,
+  the git changes list, the secrets question and a folder that can't be
+  listed included: in a list or the line view its button ends the footer
+  where it fits on a footer row already there, else it sits in the header
+  row, so it never costs the list a row. `f` goes back to the view it was opened from.
 - `r` in the folder list shows the last 10 files you added to the prompt from
   this working directory, newest first, kept between sessions in the
   plugin's own store (`$.store`). Enter, `l`, `m` and `p` work on them as

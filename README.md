@@ -119,6 +119,7 @@ To update later: `claude plugin update file-picker@claude-files`.
 | `r` | show the files you added here before (see below) |
 | `p` | show or hide a preview of the highlighted file under the list: its first lines, once the arrows rest on it. Off until you press it, then on until the session ends. Secrets files, binary files, links that lead out of the project and files over 64 KiB get a one-line notice instead |
 | `g` | list the files git sees as changed or untracked (see below) |
+| `t` | open the Feedback screen (see [Feedback](#feedback)) |
 | `Esc` | close the pane |
 
 **Project search** (after `s`)
@@ -128,6 +129,7 @@ To update later: `claude plugin update file-picker@claude-files`.
 | type | match file names anywhere under the working directory, shown as relative paths (`src/components/Button.tsx`); a name match ranks first, then the shorter name, then the closer path; `comp/btn` matches the path. With nothing typed, files are listed alphabetically by path |
 | `Enter` / `l` / `m` / `p` | add the file, pick its lines, mark it or preview it, exactly as in a folder |
 | `h` | include hidden folders and files (walks the project again) |
+| `t` | open the Feedback screen |
 | `f` | back to the folder list |
 
 The project is walked once when you press `s`, one folder listing at a time,
@@ -144,6 +146,7 @@ added since.
 |---|---|
 | type | filter the recent files, ranked as in search; with nothing typed they're newest first |
 | `Enter` / `l` / `m` / `p` | add the file, pick its lines, mark it or preview it, exactly as in a folder |
+| `t` | open the Feedback screen |
 | `f` | back to the folder list |
 
 The last 10 files you put in the prompt from this working directory (with
@@ -158,6 +161,7 @@ are kept. A secrets file in the list still needs its second yes.
 |---|---|
 | type | filter the changed files, ranked as in project search; each row shows git's status (`M` modified, `A` added, `R` renamed, `??` untracked, `UU` conflicted) |
 | `Enter` / `l` / `m` | add the file, pick its lines or mark it, exactly as in a folder |
+| `t` | open the Feedback screen |
 | `f` | back to the folder list |
 
 `g` runs `git status` once (see [Safety](#safety)) from the repository that
@@ -182,6 +186,7 @@ the folder list to see changes made since.
 | find box | type text and press Enter to jump to the next line containing it |
 | `w` | put the whole file in instead |
 | `x` | clear the start you marked and any kept ranges |
+| `t` | open the Feedback screen |
 | `f` | back to the folder |
 
 **In and out in one key.** Open a folder and the focus sits on `../`, so Enter
@@ -215,6 +220,35 @@ footer buttons. The preview (`p`) shows only in a pane of at least 20 rows
 and 40 columns, and takes at most half the list's rows. Below about 40 columns by 10 rows the arrow keys may scroll the
 pane instead of moving between rows: widen the terminal or drag the pane edge
 to give it room.
+
+## Feedback
+
+Found a bug or have an idea? Press `t` in the pane, or type `/files bug` or
+`/files idea`. The Feedback screen has two links:
+
+- **Report a bug** opens this repository's bug form on GitHub with the plugin
+  version, the Claude Code version, where it runs (terminal, desktop, ...),
+  the pane's size, the view you were in (folder, search, recent, changes,
+  lines, `confirm` for the secrets question or `error` for a folder that
+  can't be listed) and the last message the pane showed already filled in.
+  File names, paths and anything you typed are taken out of that message
+  (they read `<path>`). A path goes whole, spaces included: from the word
+  that starts it (one holding `/` or `\`, as in `/srv`, `C:\` or
+  `\\server`, or starting with `~`) to the quote, bracket, `: `, `, ` or
+  end that closes it; where that is unclear, more goes rather than less.
+  The link never carries file contents or your prompt.
+- **Suggest a feature** opens the feature form with the two versions filled in.
+
+Clicking a link opens it in your browser; nothing is sent until you submit
+the form on GitHub, and you can edit or delete every field first. A terminal
+that can't open links shows the address, on github.com, instead. `f` goes
+back to where you were.
+
+`t` works in every view except the Feedback screen itself, including the
+secrets question and a folder that can't be listed. In a list or the line
+view its button ends the footer where it fits on a row the footer already
+takes, so it never costs the list a row; otherwise it sits at the right of
+the header row.
 
 ## Safety
 
@@ -288,7 +322,9 @@ the changes. Either way no filter runs.
 
 Apart from those two git commands, the plugin runs nothing, never writes your
 files or touches the network, never reads your Claude Code settings, and
-nothing is sent until you press Enter on the prompt yourself.
+nothing is sent until you press Enter on the prompt yourself. The Feedback
+links (`t`) are addresses on github.com: the plugin opens no connection, and
+the links open in your browser only when you click them.
 
 **What it stores.** The full paths of the last 10 files you added to the
 prompt, per working directory (for `r`), secrets files included, and nothing
@@ -329,7 +365,7 @@ just cloned, so they're treated as untrusted:
   first, and names the real file. Dangling links, devices and pipes are refused.
 
 Found a security problem? Please report it privately, as [SECURITY.md](SECURITY.md)
-describes; for anything else, open an issue.
+describes; for anything else, press `t` in the pane or open an issue.
 
 ## What the hooks do
 
@@ -339,8 +375,8 @@ changes what Claude or its tools do; they only add the pane.
 | Hook | What it does |
 |---|---|
 | `session.start` | registers the `/files` command |
-| `command.run` (`/files` only) | opens the Files pane with an empty filter. It is matched to the `/files` command, so it never sees or changes any other command |
-| `ui.render` (the Files pane) | draws the folder list, the project search, the recent files, the git changes list, the line view (with any kept ranges) or the secrets confirmation |
+| `command.run` (`/files` only) | opens the Files pane with an empty filter, or on the Feedback screen for `/files bug` and `/files idea`. It is matched to the `/files` command, so it never sees or changes any other command |
+| `ui.render` (the Files pane) | draws the folder list, the project search, the recent files, the git changes list, the line view (with any kept ranges), the secrets confirmation or the Feedback screen (two links to GitHub issue forms) |
 | `ui.focus` (the Files pane) | remembers the highlighted row for `l`, `m` and the preview, and when the arrows reach a `↑/↓ N more` row, slides the list one row. With the preview on, it starts a short timer whose end reads the highlighted file |
 
 Engine calls it makes: `$.command.register` (the `/files` command),
@@ -349,12 +385,13 @@ Engine calls it makes: `$.command.register` (the `/files` command),
 `$.fs.read` (the file you press `l` on, up to 4 MiB, and with the preview on,
 the highlighted file, up to 64 KiB), `$.clock.after` (waits 120 ms for the
 arrows to rest before the preview reads),
-`$.prompt.fill` (insert the mention), `$.session.cwd`, `$.ui.*` (pane, focus,
+`$.prompt.fill` (insert the mention), `$.session.cwd`, `$.session.version`
+(the Claude Code version the bug link fills in), `$.ui.*` (pane, focus,
 toasts), `$.store` (the recent files, kept between sessions: read when
 you press `r` or add a file, written when you add a file or one has gone) and `$.state` (the pane's own session state: folder, filter, scroll
 position, search, recent or changes mode, the open file, the range start,
-the kept line ranges, the marked files, the recent files as last checked and
-whether the preview is on). It
+the kept line ranges, the marked files, the recent files as last checked,
+whether the preview is on and whether the Feedback screen is open). It
 reads no environment variables, tokens or Claude Code settings, and it makes
 no network requests (`git status` runs with lazy fetch off, so it reads only local files): `claude plugin validate` shows no `env reads:` line and no
 network calls. The list of secrets file names under [Safety](#safety) is used
@@ -394,9 +431,10 @@ Dependabot keeps the pinned actions current.
 | File | What |
 |---|---|
 | `hooks/register.tsx` | `/files`, the pane, the line view, focus handling, picking |
-| `hooks/rank.ts` | pure helpers: ranking, the project walk, `git status` parsing, paths, mentions, secrets check, the list window, the recent list |
+| `hooks/rank.ts` | pure helpers: ranking, the project walk, `git status` parsing, paths, mentions, secrets check, the list window, the recent list, the feedback links |
 | `types/index.d.ts` | the session state the pane keeps |
-| `tests/` | unit, hardening (hostile names, Windows paths), line view, project search, recent files and UI tests |
+| `tests/` | unit, hardening (hostile names, Windows paths), line view, project search, recent files, feedback and UI tests |
+| `.github/ISSUE_TEMPLATE/` | the bug and feature forms the Feedback links open |
 | `CHANGELOG.md` | what changed in each version |
 
 One design note, since it isn't obvious: a pane whose content is taller than

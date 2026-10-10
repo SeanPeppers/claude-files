@@ -359,6 +359,14 @@ export const wrappedRows = (
   return rows;
 };
 
+// Whether `label` fits after `labels` without wrapping the footer onto
+// another row: a button that only shows where it costs the list nothing.
+export const fitsAfter = (
+  labels: readonly string[],
+  label: string,
+  width: number,
+) => wrappedRows([...labels, label], width) === wrappedRows(labels, width);
+
 // One preview row: tabs as two spaces, unsafe characters as �, cut to width.
 export const previewLine = (text: string, width: number) =>
   fitCells(displayName(text.replace(/\t/g, "  ").replace(/\r$/, "")), width);
@@ -812,3 +820,152 @@ export const ringAfterToggle = (
   key === "filter" || key === PARENT_KEY || (before !== "" && before === after)
     ? ""
     : pressed;
+
+// The plugin's version, as .claude-plugin/plugin.json spells it: the module
+// can't read its manifest, so a test keeps the two in step.
+export const PLUGIN_VERSION = "0.4.3";
+export const FEEDBACK_ISSUES =
+  "https://github.com/SeanPeppers/claude-files/issues/new";
+// What a Link takes in all, percent-encoded.
+export const LINK_MAX = 2048;
+// A version or a size longer than this is no version or size.
+const FACT_MAX = 100;
+
+// What a quote or bracket right before a path closes with.
+const PATH_CLOSERS: Record<string, string> = {
+  "'": "'",
+  '"': '"',
+  "`": "`",
+  "(": ")",
+  "[": "]",
+  "\u2018": "\u2019",
+  "\u201C": "\u201D",
+};
+// A closer counts only before the end, punctuation or (for a quote) a space,
+// so an apostrophe or a bracket inside a name (Bob's, Merger (old) q3) doesn't
+// end the path early.
+const QUOTE_CLOSES_AT = /^(?:$|[\s,.;:)\]])/;
+const BRACKET_CLOSES_AT = /^(?:$|[,.;:)\]])/;
+// Where an unquoted path ends: the ": ", ", " or "; " the pane's messages put
+// after one, or a line break.
+const PATH_END = /: |, |; |\n/g;
+const SEPARATOR = /[\\/]/;
+const WORD = /\S*/y;
+
+// Where the path starting at `i` ends. After a quote or bracket, at its
+// closer. Otherwise at the next delimiter, unless the text up to the one
+// after holds a separator too: a name may hold ", " or ": ", so the path runs
+// on rather than leave a piece of it behind.
+const pathEndFrom = (text: string, i: number) => {
+  const closer = PATH_CLOSERS[text[i - 1] ?? ""];
+  if (closer) {
+    const closes = /[)\]]/.test(closer) ? BRACKET_CLOSES_AT : QUOTE_CLOSES_AT;
+    let at = text.indexOf(closer, i);
+    while (at >= 0 && !closes.test(text.slice(at + 1, at + 2)))
+      at = text.indexOf(closer, at + 1);
+    return at < 0 ? text.length : at;
+  }
+  PATH_END.lastIndex = i;
+  for (let end = PATH_END.exec(text); end; ) {
+    const after = end.index + end[0].length;
+    PATH_END.lastIndex = after;
+    const next = PATH_END.exec(text);
+    const chunk = text.slice(after, next ? next.index : text.length);
+    if (end[0] === "\n" || !SEPARATOR.test(chunk)) return end.index;
+    end = next;
+  }
+  return text.length;
+};
+
+// `text` with every name in `names` and anything that looks like a path put
+// as <path>, so a pane message can go into a public bug report. It fails
+// closed: a word holding a separator, or starting with ~, starts a path that
+// runs to a clear end (see pathEndFrom) even through spaces; an @mention goes
+// whole, to its closing quote when quoted; and any word left with @ or a file
+// extension goes too. Apostrophes in words are left alone: the pane quotes
+// names only in @"..." mentions.
+export const scrubMessage = (text: string, names: readonly string[] = []) => {
+  let out = text;
+  // Longest first, so a name that starts another can't leave the rest behind.
+  const longestFirst = [...names].sort((a, b) => b.length - a.length);
+  for (const name of longestFirst)
+    if (name) out = out.split(name).join("<path>");
+  out = out.replace(/@"[^"]*"?|@'[^']*'?/g, "<path>");
+  let rooted = "";
+  let copied = 0;
+  // A word with no separator has none in its tail either (a quote or bracket
+  // inside it starts a new word there), so the scan skips it whole: each
+  // character is looked at a bounded number of times.
+  for (let i = 0; i < out.length; ) {
+    const c = out[i] ?? "";
+    const before = out[i - 1];
+    const starts =
+      !(c in PATH_CLOSERS) &&
+      (before === undefined || /[\s=>]/.test(before) || before in PATH_CLOSERS);
+    if (!starts) {
+      i++;
+      continue;
+    }
+    WORD.lastIndex = i;
+    const word = WORD.exec(out)?.[0] ?? "";
+    if (c === "~" || SEPARATOR.test(word)) {
+      rooted += `${out.slice(copied, i)}<path>`;
+      i = pathEndFrom(out, i);
+      copied = i;
+    } else i += Math.max(1, word.length);
+  }
+  rooted += out.slice(copied);
+  // Word by word: one regex over the whole text backtracks quadratically on a
+  // long run with no spaces.
+  return rooted.replace(/\S+/g, (word) =>
+    /[\\/@~]|\.[A-Za-z0-9]{1,10}\b/.test(word) ? "<path>" : word,
+  );
+};
+
+export type FeedbackFacts = {
+  claude: string;
+  surface: string;
+  pane: string;
+  view: string;
+  message: string;
+};
+
+const issueUrl = (fields: Record<string, string>) =>
+  `${FEEDBACK_ISSUES}?${Object.entries(fields)
+    .map(
+      ([key, value]) =>
+        `${key}=${encodeURIComponent(value.replace(/\p{Cs}/gu, "\uFFFD"))}`,
+    )
+    .join("&")}`;
+
+// The GitHub issue form for a bug or an idea, its fields filled from `facts`.
+// The last message is scrubbed of paths and cut to keep the URL a Link takes.
+export const feedbackUrl = (kind: "bug" | "idea", facts: FeedbackFacts) => {
+  const versions = {
+    "plugin-version": PLUGIN_VERSION,
+    "claude-version": facts.claude.slice(0, FACT_MAX),
+  };
+  if (kind === "idea")
+    return issueUrl({ template: "feature.yml", title: "Idea: ", ...versions });
+  const fields = {
+    template: "bug.yml",
+    title: "Bug: ",
+    ...versions,
+    surface: facts.surface.slice(0, FACT_MAX),
+    "pane-size": facts.pane.slice(0, FACT_MAX),
+    view: facts.view.slice(0, FACT_MAX),
+  };
+  const message = [...scrubMessage(facts.message)];
+  if (message.length === 0) return issueUrl(fields);
+  let keep = message.length;
+  for (;;) {
+    const cut = keep < message.length;
+    const url = issueUrl({
+      ...fields,
+      "last-message": `${message.slice(0, keep).join("")}${cut ? "…" : ""}`,
+    });
+    if (url.length <= LINK_MAX || keep === 0) return url;
+    // A code point takes at most 12 characters percent-encoded.
+    keep = Math.max(0, keep - Math.ceil((url.length - LINK_MAX) / 12));
+  }
+};

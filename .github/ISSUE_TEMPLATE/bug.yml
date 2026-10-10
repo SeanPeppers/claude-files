@@ -1,0 +1,71 @@
+name: Bug report
+description: Something in the Files pane doesn't work as it should
+title: "Bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Opened from the pane (`t` in `/files`, or `/files bug`), the version fields below are filled in already. Please leave out anything private: file names, paths and file contents aren't needed. Security problems go through [SECURITY.md](https://github.com/SeanPeppers/claude-files/blob/main/SECURITY.md), not here.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and any message the pane showed.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Type /files
+        2. Press s
+        3. ...
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: From `.claude-plugin/plugin.json`, or `claude plugin list`.
+      placeholder: "0.4.3"
+    validations:
+      required: true
+  - type: input
+    id: claude-version
+    attributes:
+      label: Claude Code version
+      description: "`claude --version`"
+      placeholder: "2.1.291"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "macOS 15, Ubuntu 24.04, Windows 11"
+  - type: input
+    id: surface
+    attributes:
+      label: Where it ran
+      description: terminal, desktop (the app's Code tab), vscode or mobile.
+  - type: input
+    id: pane-size
+    attributes:
+      label: Pane size
+      description: Columns x rows of the pane's body.
+  - type: input
+    id: view
+    attributes:
+      label: View
+      description: The view that was open (folder, search, recent, changes, lines, confirm or error).
+  - type: textarea
+    id: last-message
+    attributes:
+      label: Last message the pane showed
+      description: Paths and file names are replaced with <path> before it is filled in.

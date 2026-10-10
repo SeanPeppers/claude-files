@@ -10,7 +10,7 @@ export const heightOf = (node: Node, columns: number): number => {
   const kids = node.children ?? [];
   if (node.type !== "Box") return 1;
   const frame = (props.borderStyle ? 2 : 0) + (props.marginTop ?? 0);
-  if (props.flexDirection === "column") {
+  if (String(props.flexDirection).startsWith("column")) {
     const shown = kids.filter((kid) => kid !== "");
     return (
       frame +
