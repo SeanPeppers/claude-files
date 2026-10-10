@@ -116,8 +116,8 @@ test("/files bug over a pending secrets question shows Feedback, and back lands 
   const ui = await mount($);
   await ui.press({ key: "row:credentials" });
   expect(await ui.find({ key: "confirm:no" })).toBeDefined();
-  // The question view draws no feedback button.
-  expect(await ui.find({ key: "feedback" })).toBeUndefined();
+  // The question draws the feedback button too.
+  expect(await ui.find({ key: "feedback" })).toBeDefined();
   await ui.unmount();
   const run: any = { command: "files", args: "bug" };
   await $.command.run(run);

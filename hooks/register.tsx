@@ -1458,44 +1458,26 @@ export const register: Register = (on) => {
       );
     };
 
-    if (confirm) {
-      const action = await readState($, "confirmAction");
-      const yes = () =>
-        action === "lines" ? openLines($, confirm) : openPath($, confirm);
-      return (
-        <Box flexDirection="column" gap={1}>
-          <Text color="warning" bold>
-            {confirmTarget?.escapes &&
-            !isSecretPath(confirm) &&
-            !isSecretPath(confirmTarget.real)
-              ? `⚠ ${relative(confirm)} is a link that leads out of the project`
-              : `⚠ ${relative(confirm)} looks like a secrets file`}
-          </Text>
-          {confirmTarget && confirmTarget.real !== confirm && (
-            <Text>{`It really opens ${displayName(confirmTarget.real)}`}</Text>
-          )}
-          <Text>
-            {action === "lines"
-              ? "Its contents would be shown here, and any lines you pick are sent to Claude with your prompt."
-              : "Its contents would be sent to Claude when you send the prompt."}
-          </Text>
-          <Box flexDirection="row" gap={2}>
-            <Button
-              key="confirm:no"
-              hotkey="n"
-              variant="primary"
-              autoFocus
-              onPress={() => cancelConfirm($)}
-            >
-              Cancel
-            </Button>
-            <Button key="confirm:yes" hotkey="y" onPress={yes}>
-              {action === "lines" ? "Show anyway" : "Add anyway"}
-            </Button>
-          </Box>
-        </Box>
-      );
-    }
+    // `t` works in every view but Feedback itself. In a list or the line view
+    // the button ends the footer where it fits on a row the footer already
+    // takes, else it sits in the header row; the secrets question and the
+    // Cannot list error draw it with their buttons. Feedback is drawn before
+    // the question, so it can open over it. Each view
+    // draws its header after the filter in a reversed column: when the element
+    // holding the ring goes (s or r pressed), the engine moves the ring to the
+    // first element drawn, and a header button there took the typed keys away
+    // from the filter and gave them to the prompt.
+    const feedbackButton = (from: string) => (
+      <Button
+        key="feedback"
+        plain
+        hotkey="t"
+        dimColor
+        onPress={() => openFeedback($, from, focusedKey)}
+      >
+        feedback
+      </Button>
+    );
 
     const feedbackFrom = await readState($, "feedback");
     if (feedbackFrom) {
@@ -1540,23 +1522,46 @@ export const register: Register = (on) => {
       );
     }
 
-    // `t` works in every view: the button ends the footer where it fits on a
-    // row the footer already takes, else it sits in the header row. Each view
-    // draws its header after the filter in a reversed column: when the element
-    // holding the ring goes (s or r pressed), the engine moves the ring to the
-    // first element drawn, and a header button there took the typed keys away
-    // from the filter and gave them to the prompt.
-    const feedbackButton = (from: string) => (
-      <Button
-        key="feedback"
-        plain
-        hotkey="t"
-        dimColor
-        onPress={() => openFeedback($, from, focusedKey)}
-      >
-        feedback
-      </Button>
-    );
+    if (confirm) {
+      const action = await readState($, "confirmAction");
+      const yes = () =>
+        action === "lines" ? openLines($, confirm) : openPath($, confirm);
+      return (
+        <Box flexDirection="column" gap={1}>
+          <Text color="warning" bold>
+            {confirmTarget?.escapes &&
+            !isSecretPath(confirm) &&
+            !isSecretPath(confirmTarget.real)
+              ? `⚠ ${relative(confirm)} is a link that leads out of the project`
+              : `⚠ ${relative(confirm)} looks like a secrets file`}
+          </Text>
+          {confirmTarget && confirmTarget.real !== confirm && (
+            <Text>{`It really opens ${displayName(confirmTarget.real)}`}</Text>
+          )}
+          <Text>
+            {action === "lines"
+              ? "Its contents would be shown here, and any lines you pick are sent to Claude with your prompt."
+              : "Its contents would be sent to Claude when you send the prompt."}
+          </Text>
+          <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+            <Button
+              key="confirm:no"
+              hotkey="n"
+              variant="primary"
+              autoFocus
+              onPress={() => cancelConfirm($)}
+            >
+              Cancel
+            </Button>
+            <Button key="confirm:yes" hotkey="y" onPress={yes}>
+              {action === "lines" ? "Show anyway" : "Add anyway"}
+            </Button>
+            {feedbackButton("confirm")}
+          </Box>
+        </Box>
+      );
+    }
+
     const preview = await readState($, "preview");
     if (preview && previewLines?.path === preview) {
       const anchor = await readState($, "anchor");
@@ -1888,6 +1893,7 @@ export const register: Register = (on) => {
       // Read so the pane redraws when the walk lands.
       await readState($, "walked");
       const changes = await readState($, "changes");
+      const listView = recentView ? "recent" : changes ? "changes" : "search";
       const recent = recentView ? await readState($, "recent") : [];
       listRows = listRoom((footer) => [
         "l: lines",
@@ -1980,8 +1986,7 @@ export const register: Register = (on) => {
                       ? `${hits.length}/${total}`
                       : `${total}`}
                 </Text>
-                {!listFeedbackFits &&
-                  feedbackButton(recentView ? "recent" : "search")}
+                {!listFeedbackFits && feedbackButton(listView)}
               </Box>
             </Box>
           </Box>
@@ -2102,8 +2107,7 @@ export const register: Register = (on) => {
                 {`insert ${marked.length} marked`}
               </Button>
             )}
-            {listFeedbackFits &&
-              feedbackButton(recentView ? "recent" : "search")}
+            {listFeedbackFits && feedbackButton(listView)}
           </Box>
           {!compact && (
             <Text dimColor wrap="truncate-end">
@@ -2131,9 +2135,12 @@ export const register: Register = (on) => {
           <Text color="error">
             Cannot list {displayName(dir)}: {displayName(String(err))}
           </Text>
-          <Button autoFocus onPress={() => goTo($, cwd)}>
-            Back to working directory
-          </Button>
+          <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+            <Button key="cwd" autoFocus onPress={() => goTo($, cwd)}>
+              Back to working directory
+            </Button>
+            {feedbackButton("error")}
+          </Box>
         </Box>
       );
     }

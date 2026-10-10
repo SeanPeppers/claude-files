@@ -205,6 +205,15 @@ for (const [COLUMNS, ROWS] of [
     await ui.press({ key: "recent" });
     await fits();
     await ui.press({ key: "folders" });
+    // No git answers here: the changes view shows its note, footer and all.
+    await ui.press({ key: "changes" });
+    await fits();
+    await ui.press({ key: "feedback" });
+    expect(new URL((await linksOf(ui)).bug).searchParams.get("view")).toBe(
+      "changes",
+    );
+    await ui.press({ key: "feedback:back" });
+    await ui.press({ key: "folders" });
     await focus("row:beta.md");
     await ui.press({ key: "lines" });
     // A started range crowds the footer most.
@@ -232,5 +241,71 @@ test("Feedback puts back and both links in a two-row body", async ($, on) => {
   expect(rows).toContain('"key":"feedback:back"');
   expect(rows).toContain("Report a bug");
   expect(rows).toContain("Suggest a feature");
+  await ui.unmount();
+});
+
+// The two views drawn in place of a list: a folder that can't be listed (the
+// likeliest moment to report a bug) and the secrets question. Both draw the
+// button, and back returns to them.
+test("t works on the Cannot list error and the secrets question", async ($, on) => {
+  on("session.cwd", () => ({ value: "/p" }));
+  on("session.version", () => ({ value: { version: "2.1.291" } }));
+  on("fs.list", (_: any, e: any) => {
+    if (posix(e.path) === "/p/locked")
+      throw new Error(
+        "EACCES: permission denied, scandir '/srv/Top Secret Merger/q3'",
+      );
+    return {
+      value: [
+        { name: "locked", kind: "dir", size: 0, mtimeMs: 0, isLink: false },
+        {
+          name: "credentials.json",
+          kind: "file",
+          size: 1,
+          mtimeMs: 0,
+          isLink: false,
+        },
+      ],
+    };
+  });
+  on("fs.stat", (_: any, e: any) => ({
+    value: {
+      kind: ["/p", "/p/locked"].includes(posix(e.path) ?? "") ? "dir" : "file",
+      size: 1,
+      mtimeMs: 0,
+      isLink: false,
+    },
+  }));
+  on("ui.focus", () => ({}));
+  on("prompt.fill", () => ({ isFilled: true }));
+  on("ui.toast", () => ({ value: undefined }));
+  const ui = await $.ui.mount({
+    plugin: "file-picker",
+    surface: "terminal",
+    component: "Pane",
+    requestId: "file-picker",
+    props: paneProps(60, 14),
+  });
+  await ui.press({ key: "row:locked" });
+  expect(await ui.find({ text: /Cannot list/ })).toBeDefined();
+  await ui.press({ key: "feedback" });
+  const fields = new URL((await linksOf(ui)).bug).searchParams;
+  expect(fields.get("view")).toBe("error");
+  const message = fields.get("last-message") ?? "";
+  expect(message).toStartWith("Cannot list <path>: ");
+  for (const leak of ["locked", "/p", "Top", "Secret", "Merger", "q3"])
+    expect(message).not.toContain(leak);
+  await ui.press({ key: "feedback:back" });
+  expect(await ui.find({ text: /Cannot list/ })).toBeDefined();
+  await ui.press({ key: "cwd" });
+
+  await ui.press({ key: "row:credentials.json" });
+  expect(await ui.find({ key: "confirm:no" })).toBeDefined();
+  await ui.press({ key: "feedback" });
+  expect(new URL((await linksOf(ui)).bug).searchParams.get("view")).toBe(
+    "confirm",
+  );
+  await ui.press({ key: "feedback:back" });
+  expect(await ui.find({ key: "confirm:no" })).toBeDefined();
   await ui.unmount();
 });

@@ -63,7 +63,7 @@ body:
     id: view
     attributes:
       label: View
-      description: The view that was open (folder, search, recent or lines).
+      description: The view that was open (folder, search, recent, changes, lines, confirm or error).
   - type: textarea
     id: last-message
     attributes:

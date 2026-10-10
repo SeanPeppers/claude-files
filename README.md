@@ -161,6 +161,7 @@ are kept. A secrets file in the list still needs its second yes.
 |---|---|
 | type | filter the changed files, ranked as in project search; each row shows git's status (`M` modified, `A` added, `R` renamed, `??` untracked, `UU` conflicted) |
 | `Enter` / `l` / `m` | add the file, pick its lines or mark it, exactly as in a folder |
+| `t` | open the Feedback screen |
 | `f` | back to the folder list |
 
 `g` runs `git status` once (see [Safety](#safety)) from the repository that
@@ -227,7 +228,9 @@ Found a bug or have an idea? Press `t` in the pane, or type `/files bug` or
 
 - **Report a bug** opens this repository's bug form on GitHub with the plugin
   version, the Claude Code version, where it runs (terminal, desktop, ...),
-  the pane's size, the view you were in (folder, search, recent or lines)
+  the pane's size, the view you were in (folder, search, recent, changes,
+  lines, `confirm` for the secrets question or `error` for a folder that
+  can't be listed)
   and the last message the pane showed already filled in. File names,
   paths and anything you typed are taken out of that message (they read
   `<path>`), and the link never carries file contents or your prompt.
@@ -238,9 +241,11 @@ the form on GitHub, and you can edit or delete every field first. A terminal
 that can't open links shows the address, on github.com, instead. `f` goes
 back to where you were.
 
-`t` works in every view. Its button ends the footer where it fits on a row
-the footer already takes, so it never costs the list a row; otherwise it sits
-at the right of the header row.
+`t` works in every view except the Feedback screen itself, including the
+secrets question and a folder that can't be listed. In a list or the line
+view its button ends the footer where it fits on a row the footer already
+takes, so it never costs the list a row; otherwise it sits at the right of
+the header row.
 
 ## Safety
 
