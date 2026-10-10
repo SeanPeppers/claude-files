@@ -20,6 +20,9 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   listed included: in a list or the line view its button ends the footer
   where it fits on a footer row already there, else it sits in the header
   row, so it never costs the list a row. `f` goes back to the view it was opened from.
+  Off the terminal the button fits each surface's own footer, and the bug
+  link names the surface `t` was pressed on and that surface's pane size,
+  whichever surface draws the screen.
 - `r` in the folder list shows the last 10 files you added to the prompt from
   this working directory, newest first, kept between sessions in the
   plugin's own store (`$.store`). Enter, `l`, `m` and `p` work on them as
@@ -31,7 +34,9 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   files are never previewed (even after a yes), nor binary files, links that
   lead out of the project or files over 64 KiB; each gets a one-line notice
   instead. The preview shows only in a pane of at least 20 rows and 40
-  columns. When turning it on or off moves the highlighted row, the
+  columns, and not in the mobile app, where a tap presses a row instead of
+  resting on it; one left on by another surface is ignored there. When
+  turning it on or off moves the highlighted row, the
   highlight goes to the `p` button, so a second `p` turns it off again.
 - Several ranges from one file: in the line view, `k` keeps the range being
   picked so another can be picked after it. Enter on the last line of the
@@ -60,6 +65,21 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   run.
   Outside a repository, or when git is missing, too old or fails, the pane
   says why.
+- Clicks and taps in the desktop app, VS Code and the mobile app: pressing
+  `lines` or `mark` with no file highlighted arms it (`lines: pick a file`,
+  `done marking`), so the next file pressed opens line by line or is marked.
+  Folders still open while armed. The terminal is unchanged, and ignores an
+  action armed on another surface.
+- Kept line ranges by click or tap: off the terminal, pressing `keep range`
+  with only a range's start picked arms it (`keep: pick its last line`), so
+  the next line pressed ends the range and keeps it instead of putting it in;
+  a second press, `clear`, `files` or another file disarms it. A range the
+  arrows walked is kept by a click as on the terminal, which never arms and
+  ignores a keep armed elsewhere. Off the terminal the footer reserves room
+  for the armed label, so arming never pushes the lines past the pane.
+- Tests that draw and use the pane on all four surfaces (terminal, desktop,
+  VS Code, mobile), including short and narrow panes and a Windows working
+  directory.
 
 ### Fixed
 
@@ -87,6 +107,35 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   highlight landing on "more" while a second `m` unmarked the hidden row.
   The list now scrolls to keep the highlighted row in view after `m` or `i`,
   and the highlight stays on it.
+- The mobile app no longer draws an empty frame where the filter and find
+  boxes would be, or key hints it has no keys for; the list gets those rows.
+- A filter typed on another surface no longer hides files on mobile, where
+  there is no box to clear it, and tapping its `↓ N more` row pages the
+  list it shows rather than the filtered one, in the folder and in search.
+- The pane draws at 24 by 80 when a surface hasn't reported its size,
+  instead of failing to draw.
+- Line view status and toasts say "click" or "tap" off the terminal.
+- Clicking or tapping a `↑/↓ N more` row, on every surface including a mouse
+  click in the terminal, no longer pages one row too far and
+  skips a row: the press now pages from where the window was before the
+  focus that the click raised slid it.
+- A surface that left the session (or a closed pane) no longer steers a
+  `↑/↓ N more` tap on the mobile app with the pane size and filter it last
+  drew: the slide follows the surfaces still drawing, and reads the filter as
+  it is now rather than as last drawn.
+- With the terminal or desktop and the mobile app drawing one session at
+  once (Remote Control), arrowing onto a `↓ N more` row slides the keyboard
+  surface's own filtered list by its own pane size, so `l` and `m` act on
+  the row it shows rather than on a row of the phone's unfiltered list.
+- A click or tap on `↓ N more` that raises no focus of its own pages from
+  the window shown, not from where an earlier slide in another folder, in
+  search or before the ring moved on left it.
+- The git changes list (`g`) works like project search on every surface:
+  the mobile app shows git's whole list past a filter typed on the desktop,
+  pages it by its own rows (while the desktop draws and after it left), and
+  a slide left in search no longer pages it. A press on `h`, `p`, `m`, `i`
+  or a line view button counts the footer and rows of the surface it was
+  drawn on, not of whichever surface drew last.
 
 ## [0.4.3] - 2026-10-07
 

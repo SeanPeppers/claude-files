@@ -9,7 +9,7 @@ import { test } from "./kit";
 import { posix } from "./posix";
 
 const ROOT = "/p";
-const SURFACES = ["terminal", "desktop"] as const;
+const SURFACES = ["terminal", "desktop", "vscode"] as const;
 const numbered = (n: number) =>
   `${Array.from({ length: n }, (_, i) => `line ${i + 1}`).join("\n")}\n`;
 const FILES: Record<string, string> = {
@@ -90,6 +90,7 @@ function wire(on: any, opts: Opts = {}) {
     return { value: undefined };
   });
   on("prompt.fill", () => ({ isFilled: true }));
+  on("session.detach", (_: any, e: any) => ({ clientId: e.clientId }));
   return log;
 }
 
@@ -323,4 +324,43 @@ test("the first lines of a file", async () => {
   expect(headLines("a\nb", 0)).toEqual([]);
   // A Windows line ending stays on the line; previewLine drops it.
   expect(headLines("a\r\nb\r\n", 5)).toEqual(["a\r", "b\r"]);
+});
+
+test("the phone has no preview and ignores one left on by the desktop", async ($, on) => {
+  const clock = mock.clock(on);
+  const log = wire(on, { many: 40 });
+  const desk = await mount($, "desktop");
+  await desk.press({ key: "peek" });
+  const deskRows = (await rowKeys(desk)).length;
+  await desk.unmount();
+  await $.session.detach({
+    surface: "desktop",
+    clientId: "desk",
+    reason: "detach",
+  });
+  const phone = await mount($, "mobile");
+  expect(await phone.find({ key: "peek" })).toBeUndefined();
+  expect(await phone.find({ key: "peek:box" })).toBeUndefined();
+  // The rows the preview took on the desktop go to the list.
+  expect((await rowKeys(phone)).length).toBeGreaterThan(deskRows);
+  await arrowOnto($, "row:app.ts");
+  await clock.advance(200);
+  expect(log.reads).toEqual([]);
+  await phone.unmount();
+});
+
+test("the desktop's arrows still preview while a phone draws the pane", async ($, on) => {
+  const clock = mock.clock(on);
+  const log = wire(on, { many: 40 });
+  const desk = await mount($, "desktop");
+  await desk.press({ key: "peek" });
+  // The phone draws after the desktop: it has no preview, but the arrows
+  // still come from the desktop's keyboard.
+  const phone = await mount($, "mobile");
+  expect(await phone.find({ key: "peek:box" })).toBeUndefined();
+  await arrowOnto($, "row:app.ts");
+  expect(await rest(clock, desk, "line 1")).toBeDefined();
+  expect(log.reads).toEqual(["/p/app.ts"]);
+  await phone.unmount();
+  await desk.unmount();
 });
