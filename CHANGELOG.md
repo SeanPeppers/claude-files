@@ -115,7 +115,8 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The pane draws at 24 by 80 when a surface hasn't reported its size,
   instead of failing to draw.
 - Line view status and toasts say "click" or "tap" off the terminal.
-- Clicking or tapping a `↑/↓ N more` row no longer pages one row too far and
+- Clicking or tapping a `↑/↓ N more` row, on every surface including a mouse
+  click in the terminal, no longer pages one row too far and
   skips a row: the press now pages from where the window was before the
   focus that the click raised slid it.
 - A surface that left the session (or a closed pane) no longer steers a
