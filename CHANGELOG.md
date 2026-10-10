@@ -67,6 +67,13 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `done marking`), so the next file pressed opens line by line or is marked.
   Folders still open while armed. The terminal is unchanged, and ignores an
   action armed on another surface.
+- Kept line ranges by click or tap: off the terminal, pressing `keep range`
+  with only a range's start picked arms it (`keep: pick its last line`), so
+  the next line pressed ends the range and keeps it instead of putting it in;
+  a second press, `clear`, `files` or another file disarms it. A range the
+  arrows walked is kept by a click as on the terminal, which never arms and
+  ignores a keep armed elsewhere. Off the terminal the footer reserves room
+  for the armed label, so arming never pushes the lines past the pane.
 - Tests that draw and use the pane on all four surfaces (terminal, desktop,
   VS Code, mobile), including short and narrow panes and a Windows working
   directory.
@@ -122,9 +129,9 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The git changes list (`g`) works like project search on every surface:
   the mobile app shows git's whole list past a filter typed on the desktop,
   pages it by its own rows (while the desktop draws and after it left), and
-  a slide left in search no longer pages it. A press on `h`, `p`, `m` or
-  `i` counts the footer and rows of the surface it was drawn on, not of
-  whichever surface drew last.
+  a slide left in search no longer pages it. A press on `h`, `p`, `m`, `i`
+  or a line view button counts the footer and rows of the surface it was
+  drawn on, not of whichever surface drew last.
 
 ## [0.4.3] - 2026-10-07
 

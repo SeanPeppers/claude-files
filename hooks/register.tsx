@@ -79,6 +79,8 @@ const LINES_CHROME_ROWS = 10;
 // arrows scroll it. There the filter box loses its border, the footer its
 // margin and the hint line goes (spareRows).
 const COMPACT_BELOW_ROWS = 20;
+// The keep button while a click or tap has armed it.
+const KEEP_ARMED_LABEL = "keep: pick its last line";
 // '' means the session's working directory, resolved at draw time.
 const DIR_STATE = { plugin: "file-picker", key: "dir" } as const;
 const PREVDIR_STATE = { plugin: "file-picker", key: "prevDir" } as const;
@@ -126,6 +128,8 @@ const CHANGES_STATE = { plugin: "file-picker", key: "changes" } as const;
 const FEEDBACK_STATE = { plugin: "file-picker", key: "feedback" } as const;
 // Where a row can't be focused without pressing it (a click, a tap), `l` and
 // `m` arm instead: "lines" or "mark" acts on the next file pressed, or ''.
+// In the line view `keep range` arms "keep": the next line pressed ends the
+// range and keeps it.
 const ARMED_STATE = { plugin: "file-picker", key: "armed" } as const;
 
 // What the list's footer labels hang on: a press that changes one can rewrap
@@ -1156,8 +1160,10 @@ async function openLines($: EngineInterface, path: string) {
       displayName(path),
     ]);
   if (await confirmFirst($, path, file, "lines")) return;
-  // An armed `lines` is spent on the file it opened, however it was picked.
-  if ((await readState($, "armed")) === "lines")
+  // An armed `lines` is spent on the file it opened, however it was picked,
+  // and a `keep` armed in another file's lines goes with them.
+  const armed = await readState($, "armed");
+  if (armed === "lines" || armed === "keep")
     await updateState($, "armed", () => "");
   await clearConfirm($);
   const target = file.mentionPath;
@@ -1191,6 +1197,7 @@ async function closeLines($: EngineInterface) {
   previewLines = undefined;
   await updateState($, "preview", () => "");
   await updateState($, "anchor", () => 0);
+  await disarmKeep($);
   // Only the key the list draws: the engine waits a while for one it doesn't.
   const byPath =
     (await readState($, "search")) || (await readState($, "recentView"));
@@ -1204,16 +1211,29 @@ async function closeLines($: EngineInterface) {
 // puts `@file#Lstart-end` in the prompt, with any ranges kept before it.
 async function pressLine($: EngineInterface, n: number, surface: string) {
   const anchor = await readState($, "anchor");
+  const view = viewOf(surface);
   if (!anchor) {
     // A click presses a line without moving the ring onto it, so the range
     // would otherwise run from wherever the ring last was.
     await updateState($, "focusLine", () => n);
     const kept = await readState($, "kept");
-    await setRanges($, n, kept, n);
+    await setRanges($, n, kept, n, view);
     const how = pickWords(surface);
     return showToast($, `Range starts at line ${n}: ${how} the last line`);
   }
-  return insertRanges($, rangeOf(anchor, n), n);
+  // Mirrors the render: a `keep` armed on another surface is not shown here.
+  const armed = surface === "terminal" ? "" : await readState($, "armed");
+  if (armed === "keep") {
+    const kept = await readState($, "kept");
+    return setRanges(
+      $,
+      0,
+      mergeRanges(kept.concat(rangeOf(anchor, n))),
+      n,
+      view,
+    );
+  }
+  return insertRanges($, rangeOf(anchor, n), n, view);
 }
 
 // The line the ring is on, or 0 when it is on the find box or a button.
@@ -1221,9 +1241,27 @@ const ringedLine = () =>
   focusedKey.startsWith("line:") ? Number(focusedKey.slice(5)) : 0;
 
 // `k`: keeps the range being picked, so another can be picked after it.
-async function keepRange($: EngineInterface, range: LineRange) {
+// Off the terminal a click or a tap on the button moves the ring off the
+// lines without having walked it to a range's end (a phone's taps never walk
+// it), so with only the start picked the press arms `keep` for the next line
+// pressed instead, and a second press disarms it. A range the arrows walked,
+// or k with the ring on the start, is kept as on the terminal.
+async function keepRange(
+  $: EngineInterface,
+  range: LineRange,
+  surface: string,
+) {
+  const walkable = surface !== "mobile" && ringedLine() > 0;
+  if (surface !== "terminal" && !walkable && range.start === range.end)
+    return arm($, "keep");
   const kept = await readState($, "kept");
-  await setRanges($, 0, mergeRanges(kept.concat(range)), ringedLine());
+  await setRanges(
+    $,
+    0,
+    mergeRanges(kept.concat(range)),
+    ringedLine(),
+    viewOf(surface),
+  );
 }
 
 // `i`, or Enter ending a range: every kept range and `last` go in as
@@ -1232,28 +1270,31 @@ async function insertRanges(
   $: EngineInterface,
   last: LineRange | undefined,
   ringLine: number,
+  view: Drawn,
 ) {
   const path = await readState($, "preview");
   const kept = await readState($, "kept");
   const ranges = mergeRanges(last ? kept.concat(last) : kept);
-  if (ranges.length === 0) return setRanges($, 0, kept, ringLine);
+  if (ranges.length === 0) return setRanges($, 0, kept, ringLine, view);
   // Whatever failed to go in, the range being picked too, stays kept so i
   // retries all of it.
   const filled = await pickFile($, path, ranges);
-  await setRanges($, 0, filled ? [] : ranges, ringLine);
+  await setRanges($, 0, filled ? [] : ranges, ringLine, view);
 }
 
 // The k, x and i buttons a range start and kept ranges bring (and an end, k,
 // i or x take away) can rewrap the footer and so move the lines, as m does
 // the list's rows: the line the ring is on is kept in view and, when its
-// place in the pane's order changes, the ring is put back on it.
+// place in the pane's order changes, the ring is put back on it. Any change
+// to the ranges spends an armed `keep`.
 async function setRanges(
   $: EngineInterface,
   anchor: number,
   kept: LineRange[],
   ringLine: number,
+  view: Drawn,
 ) {
-  const { lineRows, lineRowsAfter } = steered();
+  const { lineRows, lineRowsAfter } = view;
   const total = previewLines?.lines.length ?? 0;
   const offset = Math.min(
     await readState($, "lineOffset"),
@@ -1269,6 +1310,7 @@ async function setRanges(
   if (moved) filesAgain = !filesAgain;
   // The ranges first, as setMarks writes the marks first: the redraw between
   // the writes has the line out of view or already clamped to `windowStart`.
+  await disarmKeep($);
   await updateState($, "anchor", () => anchor);
   await updateState($, "kept", () => kept);
   if (!inView) return;
@@ -1306,8 +1348,13 @@ async function findInLines($: EngineInterface, query: string) {
 // Off the terminal a click or a tap on `lines` or `mark` moves the focus onto
 // that button, so no file is highlighted: the press arms the action for the
 // next file pressed instead, and a second press disarms it.
-async function arm($: EngineInterface, action: "lines" | "mark") {
+async function arm($: EngineInterface, action: "lines" | "mark" | "keep") {
   await updateState($, "armed", (armed) => (armed === action ? "" : action));
+}
+
+async function disarmKeep($: EngineInterface) {
+  if ((await readState($, "armed")) === "keep")
+    await updateState($, "armed", () => "");
 }
 
 async function linesOfFocused($: EngineInterface, surface: string) {
@@ -1759,16 +1806,20 @@ export const register: Register = (on) => {
       const toInsert = mergeRanges(range ? kept.concat(range) : kept);
       const insertLabel = `insert ${toInsert.length} ${toInsert.length === 1 ? "range" : "ranges"}`;
       const clearLabel = kept.length > 0 ? "clear all" : "clear start";
+      const keepLabel = armed === "keep" ? KEEP_ARMED_LABEL : "keep range";
       // The chrome counts one footer row; a narrow pane wraps the buttons,
       // listed in the order they draw, since the order decides the wraps. The
       // insert label is counted at its widest for the footer, so the ring
-      // moving a range onto or off a kept one never rewraps it.
+      // moving a range onto or off a kept one never rewraps it, and so is the
+      // keep label where a press can arm it.
+      const keepWidest =
+        e.surface === "terminal" ? "keep range" : KEEP_ARMED_LABEL;
       const rowsWith = (footer: LineFooter) => {
         const footerRows = wrappedRows(
           [
             "f: files",
             "w: whole file",
-            ...(footer.anchored ? ["k: keep range"] : []),
+            ...(footer.anchored ? [`k: ${keepWidest}`] : []),
             ...(footer.anchored || footer.kept > 0
               ? [footer.kept > 0 ? "x: clear all" : "x: clear start"]
               : []),
@@ -1803,7 +1854,7 @@ export const register: Register = (on) => {
         range && range.start !== range.end
           ? `${rangeLabel(range)}: Enter to add${kept.length > 0 ? " all" : ""}, k to keep, x to clear`
           : anchor
-            ? `From line ${anchor}: ${how} the last line of the range`
+            ? `From line ${anchor}: ${how} the last line ${armed === "keep" ? "to keep the range" : "of the range"}`
             : kept.length > 0
               ? `${how} the first line of another range, or i to insert`
               : `${how} the first line of the range`;
@@ -1931,10 +1982,10 @@ export const register: Register = (on) => {
                 key="keep"
                 plain
                 hotkey="k"
-                dimColor
-                onPress={() => keepRange($, range)}
+                dimColor={armed !== "keep"}
+                onPress={() => keepRange($, range, e.surface)}
               >
-                keep range
+                {keepLabel}
               </Button>
             )}
             {(anchor > 0 || kept.length > 0) && (
@@ -1943,7 +1994,7 @@ export const register: Register = (on) => {
                 plain
                 hotkey="x"
                 dimColor
-                onPress={() => setRanges($, 0, [], ringedLine())}
+                onPress={() => setRanges($, 0, [], ringedLine(), view)}
               >
                 {clearLabel}
               </Button>
@@ -1954,7 +2005,7 @@ export const register: Register = (on) => {
                 plain
                 hotkey="i"
                 variant="primary"
-                onPress={() => insertRanges($, range, ringedLine())}
+                onPress={() => insertRanges($, range, ringedLine(), view)}
               >
                 {insertLabel}
               </Button>
