@@ -182,6 +182,9 @@ const steered = (): Drawn => {
   const views = [...drawnOn.values()].reverse();
   return views.find((view) => view.box) ?? views[0] ?? unseen();
 };
+// The view a press on `surface` acts in: a button names the surface it was
+// drawn on, so its press counts that surface's rows and footer.
+const viewOf = (surface: string) => drawnOn.get(surface) ?? steered();
 // The row the ring is on, so `l` knows which file to open line by line.
 let focusedKey = "";
 // The previewed file's lines, read once when the line view opens.
@@ -876,10 +879,10 @@ async function ringToLine($: EngineInterface, n: number) {
 }
 
 // The keys of the list's rows, in the order drawn: recent files, search hits
-// or the folder's entries, ranked by the filter the steering surface shows.
-async function listKeys($: EngineInterface) {
+// or the folder's entries, ranked by the filter `view`'s surface shows.
+async function listKeys($: EngineInterface, view: Drawn) {
   // Read now, not as drawn: the box may have changed it since.
-  const query = steered().box ? await readState($, "query") : "";
+  const query = view.box ? await readState($, "query") : "";
   if (await readState($, "recentView")) {
     const recent = await readState($, "recent");
     return recentShown(recent, query).map((hit) => hitKey(hit.path));
@@ -898,8 +901,13 @@ async function listKeys($: EngineInterface) {
 
 // Where the row `key` sits in a list window of `rows`: its index and the
 // window's first row, as the draw clamps it, or "" when it isn't drawn.
-async function placeOf($: EngineInterface, key: string, rows: number) {
-  const keys = await listKeys($);
+async function placeOf(
+  $: EngineInterface,
+  key: string,
+  rows: number,
+  view: Drawn,
+) {
+  const keys = await listKeys($, view);
   const offset = Math.min(
     await readState($, "offset"),
     Math.max(0, keys.length - rows),
@@ -924,10 +932,10 @@ async function ringToToggle($: EngineInterface, target: string) {
   await focusFirst($, [target]);
 }
 
-async function toggleHidden($: EngineInterface) {
+async function toggleHidden($: EngineInterface, surface: string) {
   const key = focusedKey;
-  const view = steered();
-  const before = await placeOf($, key, view.listRows);
+  const view = viewOf(surface);
+  const before = await placeOf($, key, view.listRows, view);
   const searching = await readState($, "search");
   // The old walk's hits give way to "searching…" at once, so the h button's
   // new key is first drawn with the new walk's hits, which move the footer.
@@ -940,7 +948,12 @@ async function toggleHidden($: EngineInterface) {
       await ringToToggle($, ringAfterToggle(key, "", "", hiddenKey(shown)));
     return;
   }
-  const after = await placeOf($, key, view.listRowsAfter({ hidden: shown }));
+  const after = await placeOf(
+    $,
+    key,
+    view.listRowsAfter({ hidden: shown }),
+    view,
+  );
   await ringToToggle($, ringAfterToggle(key, before, after, hiddenKey(shown)));
 }
 // The slide a "more" row's focus started, and the window it started from. A
@@ -967,7 +980,8 @@ async function listShown($: EngineInterface) {
 // offset it slid from, as stored: a press clamps it to its own list.
 async function slide($: EngineInterface, by: 1 | -1) {
   const list = await listShown($);
-  const { listRows, lineRows } = steered();
+  const view = steered();
+  const { listRows, lineRows } = view;
   if (previewLines) {
     const total = previewLines.lines.length;
     if (total === 0) return undefined;
@@ -983,7 +997,7 @@ async function slide($: EngineInterface, by: 1 | -1) {
     await ringToLine($, index + 1);
     return { from, list };
   }
-  const keys = await listKeys($);
+  const keys = await listKeys($, view);
   const from = await readState($, "offset");
   const offset = Math.min(from, Math.max(0, keys.length - listRows));
   const index = Math.min(
@@ -1312,7 +1326,7 @@ async function markFocused($: EngineInterface, surface: string) {
   // A search result is always a file, named by its full path.
   if (focusedKey.startsWith("hit:")) {
     const path = focusedKey.slice(4);
-    return setMarks($, toggleMark(await readState($, "marked"), path));
+    return setMarks($, toggleMark(await readState($, "marked"), path), surface);
   }
   if (!focusedKey.startsWith("row:") || focusedKey === PARENT_KEY)
     return surface === "terminal"
@@ -1329,7 +1343,7 @@ async function markFocused($: EngineInterface, surface: string) {
       "Folders can't be marked: open one and press a to add it",
     );
   const marks = await readState($, "marked");
-  await setMarks($, toggleMark(marks, joinPath(dir, name)));
+  await setMarks($, toggleMark(marks, joinPath(dir, name)), surface);
 }
 
 // The "insert" button the marks bring, grow and take away can rewrap the
@@ -1337,10 +1351,11 @@ async function markFocused($: EngineInterface, surface: string) {
 // and when its place in the pane's order changes the ring is put back on it:
 // the engine keeps a ring at its place in that order, so it would sit on
 // another row or a "more" button while m and l acted on the row it left.
-async function setMarks($: EngineInterface, marks: string[]) {
+async function setMarks($: EngineInterface, marks: string[], surface: string) {
   const key = focusedKey;
-  const { listRows, listRowsAfter } = steered();
-  const keys = await listKeys($);
+  const view = viewOf(surface);
+  const { listRows, listRowsAfter } = view;
+  const keys = await listKeys($, view);
   const index = keys.indexOf(key);
   const offset = Math.min(
     await readState($, "offset"),
@@ -1367,7 +1382,7 @@ async function setMarks($: EngineInterface, marks: string[]) {
 // ones that pass go in with one fill. A file that would need a second yes, or
 // whose name can't be mentioned safely, is skipped and named in the toast;
 // nothing is ever confirmed on the person's behalf.
-async function insertMarked($: EngineInterface) {
+async function insertMarked($: EngineInterface, surface: string) {
   const marks = await readState($, "marked");
   const cwd = await $.session.cwd();
   const mentions = new Set<string>();
@@ -1397,7 +1412,7 @@ async function insertMarked($: EngineInterface) {
   const skips = skipped.length ? `Skipped ${skipped.join(", ")}` : "";
   const names = marks.map((path) => displayName(baseName(path)));
   if (mentions.size === 0) {
-    await setMarks($, []);
+    await setMarks($, [], surface);
     await updateState($, "armed", () => "");
     return showToast($, `Nothing added. ${skips}`, names);
   }
@@ -1408,7 +1423,7 @@ async function insertMarked($: EngineInterface) {
   // The marks stay when the fill fails, so the person can try again.
   if (!filled.isFilled)
     return showToast($, "Could not add the marked files to the prompt");
-  await setMarks($, []);
+  await setMarks($, [], surface);
   await rememberRecent($, added);
   await updateState($, "armed", () => "");
   void showToast(
@@ -1478,13 +1493,18 @@ async function schedulePeek($: EngineInterface) {
   peekTimer = $.clock.after(PEEK_DELAY_MS, fire);
 }
 
-async function togglePeek($: EngineInterface) {
+async function togglePeek($: EngineInterface, surface: string) {
   const key = focusedKey;
-  const view = steered();
-  const before = await placeOf($, key, view.listRows);
+  const view = viewOf(surface);
+  const before = await placeOf($, key, view.listRows, view);
   await updateState($, "peek", (v) => !v);
   const shown = await readState($, "peek");
-  const after = await placeOf($, key, view.listRowsAfter({ peek: shown }));
+  const after = await placeOf(
+    $,
+    key,
+    view.listRowsAfter({ peek: shown }),
+    view,
+  );
   await ringToToggle($, ringAfterToggle(key, before, after, peekKey(shown)));
   await schedulePeek($);
 }
@@ -1972,7 +1992,7 @@ export const register: Register = (on) => {
         plain
         hotkey="h"
         dimColor
-        onPress={() => toggleHidden($)}
+        onPress={() => toggleHidden($, e.surface)}
       >
         {hiddenLabelOf(showHidden)}
       </Button>
@@ -1994,7 +2014,7 @@ export const register: Register = (on) => {
         plain
         hotkey="p"
         dimColor
-        onPress={() => togglePeek($)}
+        onPress={() => togglePeek($, e.surface)}
       >
         {peekLabel}
       </Button>
@@ -2261,7 +2281,7 @@ export const register: Register = (on) => {
                 plain
                 hotkey="i"
                 variant="primary"
-                onPress={() => insertMarked($)}
+                onPress={() => insertMarked($, e.surface)}
               >
                 {`insert ${marked.length} marked`}
               </Button>
@@ -2539,7 +2559,7 @@ export const register: Register = (on) => {
               plain
               hotkey="i"
               variant="primary"
-              onPress={() => insertMarked($)}
+              onPress={() => insertMarked($, e.surface)}
             >
               {`insert ${marked.length} marked`}
             </Button>

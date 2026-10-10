@@ -119,6 +119,12 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A click or tap on `↓ N more` that raises no focus of its own pages from
   the window shown, not from where an earlier slide in another folder, in
   search or before the ring moved on left it.
+- The git changes list (`g`) works like project search on every surface:
+  the mobile app shows git's whole list past a filter typed on the desktop,
+  pages it by its own rows (while the desktop draws and after it left), and
+  a slide left in search no longer pages it. A press on `h`, `p`, `m` or
+  `i` counts the footer and rows of the surface it was drawn on, not of
+  whichever surface drew last.
 
 ## [0.4.3] - 2026-10-07
 
