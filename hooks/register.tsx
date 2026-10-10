@@ -155,6 +155,8 @@ type Drawn = {
   lineRowsAfter: (footer: LineFooter) => number;
   peekFits: number;
   box: boolean;
+  // Its pane as columns x rows, for a bug report opened from it.
+  pane: string;
 };
 const unseen = (): Drawn => ({
   listRows: 10,
@@ -163,6 +165,7 @@ const unseen = (): Drawn => ({
   lineRowsAfter: () => 10,
   peekFits: 0,
   box: true,
+  pane: "",
 });
 // Which of two keys the m button and the line view's f button are drawn
 // under. A press that has to put the ring back flips one, so the key the ring
@@ -212,6 +215,9 @@ const PEEK_DELAY_MS = 120;
 // to quote; and the row the Feedback screen's back button returns the ring to.
 let lastMessage = "";
 let feedbackRing = "";
+// The surface whose `t` opened the Feedback screen ('' for `/files bug`): the
+// bug link names it and its pane, whichever surface draws the links.
+let feedbackSurface = "";
 
 type State = PluginState["file-picker"];
 const INITIAL: State = {
@@ -1558,8 +1564,14 @@ async function togglePeek($: EngineInterface, surface: string) {
 
 // `t`: the Feedback screen, over the view `from`; back returns the ring to
 // `ring`, the row it was on.
-async function openFeedback($: EngineInterface, from: string, ring: string) {
+async function openFeedback(
+  $: EngineInterface,
+  from: string,
+  ring: string,
+  surface: string,
+) {
   feedbackRing = ring;
+  feedbackSurface = surface;
   await updateState($, "feedback", () => from);
   await focusFirst($, ["feedback:back"]);
 }
@@ -1600,6 +1612,7 @@ export const register: Register = (on) => {
     // `/files bug` and `/files idea` open straight to the Feedback screen.
     const asked = (e.args ?? "").trim().toLowerCase();
     feedbackRing = "";
+    feedbackSurface = "";
     await updateState($, "feedback", () =>
       asked === "bug" || asked === "idea" ? "none" : "",
     );
@@ -1670,6 +1683,7 @@ export const register: Register = (on) => {
     const { rows: bodyRows, columns: bodyColumns } = paneSize(e.props);
     const compact = bodyRows < COMPACT_BELOW_ROWS;
     const view = drawn(e.surface);
+    view.pane = `${bodyColumns}x${bodyRows}`;
     const { Box, Text, Button, Link } = ui;
     // A table handed out is completed with every element, one a surface lacks
     // drawing nothing, so the phone's Input is there but draws no field.
@@ -1706,7 +1720,7 @@ export const register: Register = (on) => {
         plain
         hotkey="t"
         dimColor
-        onPress={() => openFeedback($, from, focusedKey)}
+        onPress={() => openFeedback($, from, focusedKey, e.surface)}
       >
         feedback
       </Button>
@@ -1715,10 +1729,12 @@ export const register: Register = (on) => {
     const feedbackFrom = await readState($, "feedback");
     if (feedbackFrom) {
       const engine = await $.session.version();
+      // A surface that has left since its press gives way to this one.
+      const pressedOn = drawnOn.get(feedbackSurface);
       const facts = {
         claude: engine.version,
-        surface: e.surface,
-        pane: `${bodyColumns}x${bodyRows}`,
+        surface: pressedOn ? feedbackSurface : e.surface,
+        pane: pressedOn ? pressedOn.pane : view.pane,
         view: feedbackFrom,
         message: lastMessage,
       };
@@ -1842,7 +1858,7 @@ export const register: Register = (on) => {
         [
           "f: files",
           "w: whole file",
-          ...(range ? ["k: keep range"] : []),
+          ...(range ? [`k: ${keepLabel}`] : []),
           ...(anchor > 0 || kept.length > 0 ? [`x: ${clearLabel}`] : []),
           ...(kept.length > 0 ? [`i: ${insertLabel}`] : []),
         ],

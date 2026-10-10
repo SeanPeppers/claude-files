@@ -20,6 +20,9 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   listed included: in a list or the line view its button ends the footer
   where it fits on a footer row already there, else it sits in the header
   row, so it never costs the list a row. `f` goes back to the view it was opened from.
+  Off the terminal the button fits each surface's own footer, and the bug
+  link names the surface `t` was pressed on and that surface's pane size,
+  whichever surface draws the screen.
 - `r` in the folder list shows the last 10 files you added to the prompt from
   this working directory, newest first, kept between sessions in the
   plugin's own store (`$.store`). Enter, `l`, `m` and `p` work on them as
