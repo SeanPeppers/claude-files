@@ -7,6 +7,7 @@ export type Entry = {
   name: string;
   kind: "file" | "dir" | "other";
   size: number;
+  mtimeMs?: number;
   isLink?: boolean;
 };
 
@@ -174,10 +175,13 @@ const kindOrder = (entry: Entry) => (entry.kind === "dir" ? 0 : 1);
 export const isShown = (name: string, query: string, showHidden: boolean) =>
   showHidden || query.startsWith(".") || !name.startsWith(".");
 
+// `byModified` puts the newest first among equal matches of one kind, so a
+// filter still ranks by match and folders still lead; names break ties.
 export const rankEntries = <E extends Entry>(
   entries: readonly E[],
   query: string,
   showHidden: boolean,
+  byModified = false,
 ) =>
   entries
     .filter((entry) => isShown(entry.name, query, showHidden))
@@ -189,6 +193,7 @@ export const rankEntries = <E extends Entry>(
       (a, b) =>
         a.score - b.score ||
         kindOrder(a.entry) - kindOrder(b.entry) ||
+        (byModified ? (b.entry.mtimeMs ?? 0) - (a.entry.mtimeMs ?? 0) : 0) ||
         // Among equal matches the closer name wins: `button` → Button.tsx
         // before button.test.tsx. Unfiltered, the list stays alphabetical.
         (query ? a.entry.name.length - b.entry.name.length : 0) ||
