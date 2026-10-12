@@ -858,7 +858,7 @@ export const ringAfterToggle = (
 
 // The plugin's version, as .claude-plugin/plugin.json spells it: the module
 // can't read its manifest, so a test keeps the two in step.
-export const PLUGIN_VERSION = "0.4.3";
+export const PLUGIN_VERSION = "0.5.0";
 export const FEEDBACK_ISSUES =
   "https://github.com/SeanPeppers/claude-files/issues/new";
 // What a Link takes in all, percent-encoded.

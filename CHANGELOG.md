@@ -4,7 +4,7 @@ All notable changes to this plugin are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the plugin
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-10-11
 
 ### Added
 
@@ -29,12 +29,12 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   on any file, the filter narrows them, deleted files drop out, and secrets
   files still ask first. README "Safety" says what is stored.
 - `p` previews the highlighted file under the folder list, the search
-  results or the recent files: its first lines, read once the arrows rest on
-  it. It is off until you press `p` and stays on for the session. Secrets
-  files are never previewed (even after a yes), nor binary files, links that
-  lead out of the project or files over 64 KiB; each gets a one-line notice
-  instead. The preview shows only in a pane of at least 20 rows and 40
-  columns, and not in the mobile app, where a tap presses a row instead of
+  results, the recent files or the git changes: its first lines, read once
+  the arrows rest on it. It is off until you press `p` and stays on for the
+  session. Secrets files are never previewed (even after a yes), nor binary
+  files, links that lead out of the project or files over 64 KiB; each gets a
+  one-line notice instead. The preview shows only in a pane of at least 20
+  rows and 40 columns, and not in the mobile app, where a tap presses a row instead of
   resting on it; one left on by another surface is ignored there. When
   turning it on or off moves the highlighted row, the
   highlight goes to the `p` button, so a second `p` turns it off again.
@@ -50,8 +50,8 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   scrolls to keep the highlighted line in view and the highlight stays on it.
 - `g` lists the files git sees as changed or untracked, with their status
   (`M`, `A`, `R`, `??`, `UU`), filtered and picked like project search
-  results: Enter, `l` and `m` work on them. It runs two read-only git
-  commands, `git rev-parse --git-common-dir` and
+  results: Enter, `l`, `m`, `p` and `i` work on them. It runs two read-only
+  git commands, `git rev-parse --git-common-dir` and
   `git status --porcelain=v1 -z`, pinned to the repository root with
   `--work-tree` and `GIT_CEILING_DIRECTORIES`, and no other. Its flags turn
   off optional locks, lazy fetch, fsmonitor, the untracked cache and
@@ -270,6 +270,7 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Windows and macOS support (drive and UNC paths, NFD names) and CI on all
   three.
 
+[0.5.0]: https://github.com/SeanPeppers/claude-files/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/SeanPeppers/claude-files/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/SeanPeppers/claude-files/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/SeanPeppers/claude-files/compare/v0.4.0...v0.4.1

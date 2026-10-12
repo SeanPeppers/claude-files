@@ -25,8 +25,9 @@ or press `l` and pick just the lines you care about: `@src/app.ts#L40-72`.
 ❯ @src/app.ts#L40-72
 ```
 
-A community plugin for the Claude Code terminal and the desktop app's Code tab,
-on Linux, macOS and Windows. Not affiliated with Anthropic.
+A community plugin for the Claude Code terminal, the desktop app's Code tab,
+VS Code and the Claude mobile app, on Linux, macOS and Windows. Not affiliated
+with Anthropic.
 
 ## Why use it
 
@@ -127,7 +128,7 @@ To update later: `claude plugin update file-picker@claude-files`.
 | Key | Does |
 |---|---|
 | type | match file names anywhere under the working directory, shown as relative paths (`src/components/Button.tsx`); a name match ranks first, then the shorter name, then the closer path; `comp/btn` matches the path. With nothing typed, files are listed alphabetically by path |
-| `Enter` / `l` / `m` / `p` | add the file, pick its lines, mark it or preview it, exactly as in a folder |
+| `Enter` / `l` / `m` / `p` / `i` | add the file, pick its lines, mark it, preview it or insert the marked files, exactly as in a folder |
 | `h` | include hidden folders and files (walks the project again) |
 | `t` | open the Feedback screen |
 | `f` | back to the folder list |
@@ -145,7 +146,7 @@ added since.
 | Key | Does |
 |---|---|
 | type | filter the recent files, ranked as in search; with nothing typed they're newest first |
-| `Enter` / `l` / `m` / `p` | add the file, pick its lines, mark it or preview it, exactly as in a folder |
+| `Enter` / `l` / `m` / `p` / `i` | add the file, pick its lines, mark it, preview it or insert the marked files, exactly as in a folder |
 | `t` | open the Feedback screen |
 | `f` | back to the folder list |
 
@@ -160,7 +161,7 @@ are kept. A secrets file in the list still needs its second yes.
 | Key | Does |
 |---|---|
 | type | filter the changed files, ranked as in project search; each row shows git's status (`M` modified, `A` added, `R` renamed, `??` untracked, `UU` conflicted) |
-| `Enter` / `l` / `m` | add the file, pick its lines or mark it, exactly as in a folder |
+| `Enter` / `l` / `m` / `p` / `i` | add the file, pick its lines, mark it, preview it or insert the marked files, exactly as in a folder |
 | `t` | open the Feedback screen |
 | `f` | back to the folder list |
 
