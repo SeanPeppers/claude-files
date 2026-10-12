@@ -4,6 +4,7 @@ declare module "claude-code" {
       dir: string;
       prevDir: string;
       showHidden: boolean;
+      byModified: boolean;
       query: string;
       offset: number;
       preview: string;
