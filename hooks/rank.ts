@@ -110,6 +110,37 @@ export const mentionFor = (path: string, cwd: string, range?: LineRange) => {
     : `@${slashed}${fragment} `;
 };
 
+// One mention per range, in the order given, or undefined when the path can't
+// be mentioned safely; no ranges is the whole file.
+export const mentionsFor = (
+  path: string,
+  cwd: string,
+  ranges: readonly LineRange[] = [],
+) => {
+  if (ranges.length === 0) return mentionFor(path, cwd);
+  const mentions = ranges.map((range) => mentionFor(path, cwd, range));
+  return mentions.every(Boolean) ? mentions.join("") : undefined;
+};
+
+// Sorted by start, with overlapping or touching ranges joined: 3–5 and 6–9
+// are one range, 3–9, so no line is mentioned twice.
+export const mergeRanges = (ranges: readonly LineRange[]) => {
+  const merged: LineRange[] = [];
+  for (const range of [...ranges].sort((a, b) => a.start - b.start)) {
+    const last = merged.at(-1);
+    if (last && range.start <= last.end + 1)
+      last.end = Math.max(last.end, range.end);
+    else merged.push({ start: range.start, end: range.end });
+  }
+  return merged;
+};
+
+// Ranges as the status line lists them: `L3–9, L12`.
+export const rangesLabel = (ranges: readonly LineRange[]) =>
+  ranges
+    .map(({ start, end }) => (start === end ? `L${start}` : `L${start}–${end}`))
+    .join(", ");
+
 // Lower is better; undefined means no match. Prefix beats substring beats
 // subsequence. NFC on both sides: macOS often stores names decomposed.
 export const fuzzyScore = (name: string, query: string): number | undefined => {
@@ -328,6 +359,49 @@ export const wrappedRows = (
   return rows;
 };
 
+// Whether `label` fits after `labels` without wrapping the footer onto
+// another row: a button that only shows where it costs the list nothing.
+export const fitsAfter = (
+  labels: readonly string[],
+  label: string,
+  width: number,
+) => wrappedRows([...labels, label], width) === wrappedRows(labels, width);
+
+// The pane's rows and columns as its props report them. A surface that
+// hasn't measured yet may leave them out; the pane then draws at a usual
+// terminal size instead of failing to draw.
+export const DEFAULT_BODY_ROWS = 24;
+export const DEFAULT_BODY_COLUMNS = 80;
+const sizeOr = (n: unknown, fallback: number) =>
+  typeof n === "number" && Number.isFinite(n) ? n : fallback;
+export const paneSize = (props: {
+  bodyColumns?: number;
+  scroll?: { bodyRows?: number };
+}) => ({
+  rows: sizeOr(props.scroll?.bodyRows, DEFAULT_BODY_ROWS),
+  columns: sizeOr(props.bodyColumns, DEFAULT_BODY_COLUMNS),
+});
+
+// Rows the pane's chrome leaves to the list or the file, against the count
+// that assumes a bordered three-row text box, a footer margin and a hint
+// line. A compact pane drops the border and the margin; a surface with no
+// text box (mobile) draws none, and one with no keyboard no hint.
+export const spareRows = (
+  compact: boolean,
+  hasInput: boolean,
+  hasHint: boolean,
+) => (compact ? 1 : 0) + (hasInput ? (compact ? 2 : 0) : 3) + (hasHint ? 0 : 1);
+
+// How the person picks a row on a surface, for the words that tell them:
+// the terminal's keys, the editor and desktop app's keys or pointer, the
+// phone's touch.
+export const pickWords = (surface: string) =>
+  surface === "terminal"
+    ? "Enter on"
+    : surface === "mobile"
+      ? "Tap"
+      : "Enter or click on";
+
 // One preview row: tabs as two spaces, unsafe characters as �, cut to width.
 export const previewLine = (text: string, width: number) =>
   fitCells(displayName(text.replace(/\t/g, "  ").replace(/\r$/, "")), width);
@@ -381,6 +455,8 @@ export type Hit = {
   name: string;
   size: number;
   isLink?: boolean;
+  // Git's status letters (`M`, `??`, `R`) for a changed file.
+  status?: string;
 };
 
 // Folders a project search never walks into: version control, dependencies,
@@ -407,6 +483,8 @@ export type Walk = {
   capped: boolean;
   deep: boolean;
   foldersCapped: boolean;
+  // Git's output ran past the engine's 4 MiB limit and was cut there.
+  cut?: boolean;
 };
 
 // Lists `root` and its subfolders breadth first, one folder per `list` call.
@@ -512,3 +590,417 @@ export const rankHits = (
         NAME_ORDER.compare(a.hit.rel, b.hit.rel),
     )
     .map((row) => row.hit);
+
+// Recent files: the files last put in the prompt, newest first, per working
+// directory, as the plugin's store keeps them between sessions.
+export const RECENT_MAX = 10;
+export const RECENT_MAX_DIRS = 50;
+export type RecentByDir = Record<string, string[]>;
+
+// The store is a JSON file on disk anyone can edit, so only well-formed lists
+// are kept. Object.fromEntries, not assignment: a `__proto__` key stays data.
+export const recentByDir = (stored: unknown): RecentByDir =>
+  !stored || typeof stored !== "object" || Array.isArray(stored)
+    ? {}
+    : Object.fromEntries(
+        Object.entries(stored)
+          .filter((entry): entry is [string, unknown[]] =>
+            Array.isArray(entry[1]),
+          )
+          .map(([dir, paths]) => [
+            dir,
+            [
+              ...new Set(
+                paths
+                  .filter((path): path is string => typeof path === "string")
+                  .filter((path) => path !== ""),
+              ),
+            ].slice(0, RECENT_MAX),
+          ]),
+      );
+
+export const recentOf = (byDir: RecentByDir, dir: string) =>
+  Object.hasOwn(byDir, dir) ? (byDir[dir] ?? []) : [];
+
+// `paths` go to the top of `dir`'s list, without repeats, and `dir` becomes
+// the newest project; projects past RECENT_MAX_DIRS drop out oldest first, so
+// the store stays small.
+export const withRecent = (
+  byDir: RecentByDir,
+  dir: string,
+  paths: readonly string[],
+): RecentByDir => {
+  const list = [...new Set([...paths, ...recentOf(byDir, dir)])].slice(
+    0,
+    RECENT_MAX,
+  );
+  const others = Object.entries(byDir)
+    .filter(([other]) => other !== dir)
+    .slice(-(RECENT_MAX_DIRS - 1));
+  return Object.fromEntries([...others, [dir, list]]);
+};
+
+// `dir`'s list with only `kept` left, in its order: files deleted since drop out.
+export const keepRecent = (
+  byDir: RecentByDir,
+  dir: string,
+  kept: readonly string[],
+): RecentByDir =>
+  Object.fromEntries(
+    Object.entries(byDir).map(([other, paths]) => [
+      other,
+      other === dir ? paths.filter((path) => kept.includes(path)) : paths,
+    ]),
+  );
+
+// A recent file as a row: relative to the working directory, with `/`, when
+// under it, its full path when not.
+export const recentHit = (path: string, cwd: string, size: number): Hit => {
+  const rel = relativeTo(path, cwd);
+  return {
+    path,
+    rel: !rel ? path : isWindowsPath(path) ? rel.replace(/\\/g, "/") : rel,
+    name: baseName(path),
+    size,
+  };
+};
+
+// Unfiltered, recent files stay newest first; a filter ranks them as search
+// does. Hidden names always show: each was picked on purpose.
+export const recentShown = (hits: readonly Hit[], query: string) =>
+  query ? rankHits(hits, query, true) : hits;
+
+// Browsing preview: files over PEEK_MAX_BYTES aren't read at all, since
+// `$.fs.read` has no limit short of the whole file.
+export const PEEK_MAX_BYTES = 64 * 1024;
+export const PEEK_MAX_LINES = 10;
+const PEEK_MIN_LINES = 3;
+// The preview's file name line and the blank row above it.
+export const PEEK_CHROME_ROWS = 2;
+// Below this a preview line shows too little to be worth the list rows.
+const PEEK_MIN_COLUMNS = 40;
+
+// Lines the preview under a list gets out of the `room` the list would have
+// had alone, or 0 when it doesn't fit: never in the compact layout or a narrow
+// pane, and never more than the list keeps for itself.
+export const peekLines = (room: number, columns: number, compact: boolean) => {
+  if (compact || columns < PEEK_MIN_COLUMNS) return 0;
+  const lines = Math.min(
+    PEEK_MAX_LINES,
+    Math.floor((room - PEEK_CHROME_ROWS) / 2),
+  );
+  return lines >= PEEK_MIN_LINES ? lines : 0;
+};
+
+// The first `count` lines of `text`, without splitting the rest of it.
+export const headLines = (text: string, count: number) => {
+  const lines: string[] = [];
+  let from = 0;
+  while (lines.length < count && from < text.length) {
+    const end = text.indexOf("\n", from);
+    lines.push(text.slice(from, end < 0 ? text.length : end));
+    if (end < 0) break;
+    from = end + 1;
+  }
+  return lines;
+};
+
+// `path` and every folder above it, nearest first, ending at its root.
+export const ancestorsOf = (path: string) => {
+  const out = [path];
+  for (let dir = path; !isRoot(dir) && parentOf(dir) !== dir; ) {
+    dir = parentOf(dir);
+    if (!dir) break;
+    out.push(dir);
+  }
+  return out;
+};
+
+// Git's well-known empty tree. It's SHA-1, so in a SHA-256 repository git
+// fails with "bad --attr-source" whenever it needs attributes (to re-read a
+// file whose timestamps changed but size didn't) and lists normally when it
+// doesn't. Either way no filter runs.
+const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
+export const GIT_ATTRIBUTES_NOTE =
+  "This repository's info/attributes could start a git filter, so g stays off here";
+
+// Why `git status` gave no list, for the pane. A git too old for
+// `--no-lazy-fetch` (2.45) or `--attr-source` (2.41) stops at the unknown
+// option with exit 129 and runs nothing, which is the refusal we want.
+export const gitFailNote = (exitCode: number, stderr: string) => {
+  if (exitCode === 129 && stderr.includes("unknown option"))
+    return "git 2.45 or newer is needed to keep repository filters from running";
+  if (stderr.includes("bad --attr-source"))
+    return "git can't skip this SHA-256 repository's filters";
+  return `git status failed: ${stderr.trim().split("\n")[0] || `exit ${exitCode}`}`;
+};
+
+// The status command the plugin runs, from the repository `root` found by its
+// `.git`. Optional locks off, so status doesn't write the index. Nothing a
+// repository's files or config set up may start a program: fsmonitor off;
+// attributes read from the empty tree and no global or system attributes
+// file, so no `.gitattributes` can hand a file to a clean or process filter;
+// lazy fetch off, so a partial clone's promisor remote (and its ssh command)
+// is never reached; submodules ignored, so git starts no other git. Not
+// covered by a flag: `$GIT_DIR/info/attributes`, so the pane asks git for that
+// dir first (gitCommonDirCall) and runs no status where the file exists. The
+// engine turns
+// repository hooks off for every git it runs. Porcelain paths are relative
+// to git's work tree, so `--work-tree` pins it to `root` whatever GIT_DIR,
+// GIT_WORK_TREE or core.worktree say, and the ceiling stops git from
+// climbing past a `.git` it finds invalid into an outer repository: it fails
+// instead. `--git-dir` isn't used since an explicit git dir skips git's
+// safe.directory ownership check.
+// ponytail: a parent holding the path-list separator can't be a ceiling, so
+// it's left off there; `--work-tree` still keeps every row under `root`.
+const gitCall = (root: string, command: string[]) => {
+  const argv = [
+    "git",
+    "--no-optional-locks",
+    "--no-lazy-fetch",
+    `--attr-source=${EMPTY_TREE}`,
+    "-c",
+    "core.attributesFile=",
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "core.untrackedCache=false",
+    `--work-tree=${root}`,
+    ...command,
+  ];
+  const ceiling = isRoot(root) ? "" : parentOf(root);
+  const listSep = isWindowsPath(root) ? ";" : ":";
+  const env: Record<string, string> = { GIT_ATTR_NOSYSTEM: "1" };
+  if (ceiling && !ceiling.includes(listSep))
+    env.GIT_CEILING_DIRECTORIES = ceiling;
+  return { argv, init: { cwd: root, env } };
+};
+
+export const gitStatusCall = (root: string) =>
+  gitCall(root, [
+    "status",
+    "--porcelain=v1",
+    "-z",
+    "--untracked-files=all",
+    "--ignore-submodules=all",
+  ]);
+
+// Asks git, with the same flags, which git dir it would use for `root`:
+// rev-parse reads no index and starts no filter. The plugin checks that dir
+// for `info/attributes` itself rather than copying git's rules for finding it.
+export const gitCommonDirCall = (root: string) =>
+  gitCall(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+
+// rev-parse's answer: git ends it with one LF on every platform and keeps
+// every other character, spaces and a CR before the LF included.
+export const commonDirFrom = (stdout: string) => stdout.replace(/\n$/, "");
+
+// The files `git status --porcelain=v1 -z` names, as hits under the
+// repository `root`. Each record is `XY path`, NUL-ended, and a rename or copy
+// is followed by a record holding the path it came from. Paths are relative
+// to the repository root with `/` separators and never quoted, so spaces and
+// newlines arrive as they are. Files gone from the working tree are left out:
+// there's nothing left to mention. Output cut at the engine's limit ends
+// mid-record, so its last piece is dropped and the result says it was cut.
+export const parseGitStatus = (
+  root: string,
+  out: string,
+  truncated: boolean,
+  max = WALK_MAX_FILES,
+): Walk => {
+  const records = out.split("\0");
+  // The empty piece after the final NUL, or the record the cut left partial.
+  records.pop();
+  const hits: Hit[] = [];
+  const windows = isWindowsPath(root);
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i] ?? "";
+    const code = record.slice(0, 2);
+    if (/[RC]/.test(code)) i++;
+    const rel = record.slice(3);
+    if (record[2] !== " " || !rel || rel.endsWith("/")) continue;
+    if ((code[1] === "D" && code[0] !== "U") || code === "D ") continue;
+    if (hits.length >= max)
+      return { hits, capped: true, deep: false, foldersCapped: false };
+    hits.push({
+      path: joinPath(root, windows ? rel.replace(/\//g, "\\") : rel),
+      rel,
+      name: rel.slice(rel.lastIndexOf("/") + 1),
+      size: 0,
+      status: code.trim(),
+    });
+  }
+  return truncated
+    ? { hits, capped: false, deep: false, foldersCapped: false, cut: true }
+    : { hits, capped: false, deep: false, foldersCapped: false };
+};
+
+// The '..' row's key, drawn above the folder's rows.
+export const PARENT_KEY = "row:..";
+
+// Where the focus ring goes once p or h redraws the list: "" leaves it, else
+// it goes to `pressed`, the key the pressed button is drawn under next. The
+// engine keeps the ring at its place in the pane's order, not on its element,
+// so only what sits above the list (the filter, '..') and a row whose place
+// is unchanged (`before` and `after`, index@first row, "" when not drawn) keep
+// theirs. The filter is no place to send it: it would take the next p or h as
+// text.
+export const ringAfterToggle = (
+  key: string,
+  before: string,
+  after: string,
+  pressed: string,
+) =>
+  key === "filter" || key === PARENT_KEY || (before !== "" && before === after)
+    ? ""
+    : pressed;
+
+// The plugin's version, as .claude-plugin/plugin.json spells it: the module
+// can't read its manifest, so a test keeps the two in step.
+export const PLUGIN_VERSION = "0.5.0";
+export const FEEDBACK_ISSUES =
+  "https://github.com/SeanPeppers/claude-files/issues/new";
+// What a Link takes in all, percent-encoded.
+export const LINK_MAX = 2048;
+// A version or a size longer than this is no version or size.
+const FACT_MAX = 100;
+
+// What a quote or bracket right before a path closes with.
+const PATH_CLOSERS: Record<string, string> = {
+  "'": "'",
+  '"': '"',
+  "`": "`",
+  "(": ")",
+  "[": "]",
+  "\u2018": "\u2019",
+  "\u201C": "\u201D",
+};
+// A closer counts only before the end, punctuation or (for a quote) a space,
+// so an apostrophe or a bracket inside a name (Bob's, Merger (old) q3) doesn't
+// end the path early.
+const QUOTE_CLOSES_AT = /^(?:$|[\s,.;:)\]])/;
+const BRACKET_CLOSES_AT = /^(?:$|[,.;:)\]])/;
+// Where an unquoted path ends: the ": ", ", " or "; " the pane's messages put
+// after one, or a line break.
+const PATH_END = /: |, |; |\n/g;
+const SEPARATOR = /[\\/]/;
+const WORD = /\S*/y;
+
+// Where the path starting at `i` ends. After a quote or bracket, at its
+// closer. Otherwise at the next delimiter, unless the text up to the one
+// after holds a separator too: a name may hold ", " or ": ", so the path runs
+// on rather than leave a piece of it behind.
+const pathEndFrom = (text: string, i: number) => {
+  const closer = PATH_CLOSERS[text[i - 1] ?? ""];
+  if (closer) {
+    const closes = /[)\]]/.test(closer) ? BRACKET_CLOSES_AT : QUOTE_CLOSES_AT;
+    let at = text.indexOf(closer, i);
+    while (at >= 0 && !closes.test(text.slice(at + 1, at + 2)))
+      at = text.indexOf(closer, at + 1);
+    return at < 0 ? text.length : at;
+  }
+  PATH_END.lastIndex = i;
+  for (let end = PATH_END.exec(text); end; ) {
+    const after = end.index + end[0].length;
+    PATH_END.lastIndex = after;
+    const next = PATH_END.exec(text);
+    const chunk = text.slice(after, next ? next.index : text.length);
+    if (end[0] === "\n" || !SEPARATOR.test(chunk)) return end.index;
+    end = next;
+  }
+  return text.length;
+};
+
+// `text` with every name in `names` and anything that looks like a path put
+// as <path>, so a pane message can go into a public bug report. It fails
+// closed: a word holding a separator, or starting with ~, starts a path that
+// runs to a clear end (see pathEndFrom) even through spaces; an @mention goes
+// whole, to its closing quote when quoted; and any word left with @ or a file
+// extension goes too. Apostrophes in words are left alone: the pane quotes
+// names only in @"..." mentions.
+export const scrubMessage = (text: string, names: readonly string[] = []) => {
+  let out = text;
+  // Longest first, so a name that starts another can't leave the rest behind.
+  const longestFirst = [...names].sort((a, b) => b.length - a.length);
+  for (const name of longestFirst)
+    if (name) out = out.split(name).join("<path>");
+  out = out.replace(/@"[^"]*"?|@'[^']*'?/g, "<path>");
+  let rooted = "";
+  let copied = 0;
+  // A word with no separator has none in its tail either (a quote or bracket
+  // inside it starts a new word there), so the scan skips it whole: each
+  // character is looked at a bounded number of times.
+  for (let i = 0; i < out.length; ) {
+    const c = out[i] ?? "";
+    const before = out[i - 1];
+    const starts =
+      !(c in PATH_CLOSERS) &&
+      (before === undefined || /[\s=>]/.test(before) || before in PATH_CLOSERS);
+    if (!starts) {
+      i++;
+      continue;
+    }
+    WORD.lastIndex = i;
+    const word = WORD.exec(out)?.[0] ?? "";
+    if (c === "~" || SEPARATOR.test(word)) {
+      rooted += `${out.slice(copied, i)}<path>`;
+      i = pathEndFrom(out, i);
+      copied = i;
+    } else i += Math.max(1, word.length);
+  }
+  rooted += out.slice(copied);
+  // Word by word: one regex over the whole text backtracks quadratically on a
+  // long run with no spaces.
+  return rooted.replace(/\S+/g, (word) =>
+    /[\\/@~]|\.[A-Za-z0-9]{1,10}\b/.test(word) ? "<path>" : word,
+  );
+};
+
+export type FeedbackFacts = {
+  claude: string;
+  surface: string;
+  pane: string;
+  view: string;
+  message: string;
+};
+
+const issueUrl = (fields: Record<string, string>) =>
+  `${FEEDBACK_ISSUES}?${Object.entries(fields)
+    .map(
+      ([key, value]) =>
+        `${key}=${encodeURIComponent(value.replace(/\p{Cs}/gu, "\uFFFD"))}`,
+    )
+    .join("&")}`;
+
+// The GitHub issue form for a bug or an idea, its fields filled from `facts`.
+// The last message is scrubbed of paths and cut to keep the URL a Link takes.
+export const feedbackUrl = (kind: "bug" | "idea", facts: FeedbackFacts) => {
+  const versions = {
+    "plugin-version": PLUGIN_VERSION,
+    "claude-version": facts.claude.slice(0, FACT_MAX),
+  };
+  if (kind === "idea")
+    return issueUrl({ template: "feature.yml", title: "Idea: ", ...versions });
+  const fields = {
+    template: "bug.yml",
+    title: "Bug: ",
+    ...versions,
+    surface: facts.surface.slice(0, FACT_MAX),
+    "pane-size": facts.pane.slice(0, FACT_MAX),
+    view: facts.view.slice(0, FACT_MAX),
+  };
+  const message = [...scrubMessage(facts.message)];
+  if (message.length === 0) return issueUrl(fields);
+  let keep = message.length;
+  for (;;) {
+    const cut = keep < message.length;
+    const url = issueUrl({
+      ...fields,
+      "last-message": `${message.slice(0, keep).join("")}${cut ? "…" : ""}`,
+    });
+    if (url.length <= LINK_MAX || keep === 0) return url;
+    // A code point takes at most 12 characters percent-encoded.
+    keep = Math.max(0, keep - Math.ceil((url.length - LINK_MAX) / 12));
+  }
+};

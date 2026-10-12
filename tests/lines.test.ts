@@ -1,5 +1,4 @@
-import { expect, test } from "claude-code/testing";
-
+import { expect } from "claude-code/testing";
 import {
   findLine,
   fitCells,
@@ -8,6 +7,7 @@ import {
   mentionFor,
   previewLine,
 } from "../hooks/rank";
+import { test } from "./kit";
 import { posix } from "./posix";
 
 const ROOT = "/p";
@@ -144,12 +144,15 @@ for (const surface of SURFACES) {
     const log = wire(on);
     const ui = await mount($, surface);
     await ui.press({ key: "lines" });
+    // Off the terminal, l with nothing highlighted waits for a file instead.
+    if (surface === "terminal")
+      expect(log.toasts.shift()).toMatch(/Arrow onto a file/);
+    else expect(await ui.find({ text: "lines: pick a file" })).toBeDefined();
     await openLinesOf($, ui, "blob.bin");
     await openLinesOf($, ui, "huge.log");
-    expect(log.toasts).toHaveLength(3);
-    expect(log.toasts[0]).toMatch(/Arrow onto a file/);
-    expect(log.toasts[1]).toMatch(/binary/);
-    expect(log.toasts[2]).toMatch(/over 4 MiB/);
+    expect(log.toasts).toHaveLength(2);
+    expect(log.toasts[0]).toMatch(/binary/);
+    expect(log.toasts[1]).toMatch(/over 4 MiB/);
     expect(await ui.find({ key: "row:app.ts" })).toBeDefined();
     await ui.unmount();
   });
@@ -214,7 +217,9 @@ test("the lines between the start and the ring are highlighted", async ($, on) =
   expect(await ui.find({ text: /^ 2 │ / })).toBeDefined();
   expect(await ui.find({ text: /^ 7 │ / })).toBeDefined();
   expect(
-    await ui.find({ text: "Lines 3–6 (4 lines): Enter to add, x to clear" }),
+    await ui.find({
+      text: "Lines 3–6 (4 lines): Enter to add, k to keep, x to clear",
+    }),
   ).toBeDefined();
 
   // Upward from the start works the same.
@@ -223,7 +228,7 @@ test("the lines between the start and the ring are highlighted", async ($, on) =
   expect(await ui.find({ text: /^ 4 │ / })).toBeDefined();
   expect(await ui.find({ text: /^Lines 1–3 \(3 lines\)/ })).toBeDefined();
 
-  await ui.press({ key: "clear start" });
+  await ui.press({ key: "clear" });
   expect(await ui.find({ text: ranged })).toBeUndefined();
 
   await ui.press({ key: "line:2" });

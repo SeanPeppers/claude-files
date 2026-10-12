@@ -4,6 +4,143 @@ All notable changes to this plugin are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the plugin
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-10-11
+
+### Added
+
+- Feedback: `t` in the pane, or `/files bug` and `/files idea`, opens a
+  screen with two links to GitHub issue forms (added under
+  `.github/ISSUE_TEMPLATE`). Report a bug fills in the plugin and Claude
+  Code versions (`$.session.version`), the surface, the pane size, the view
+  and the pane's last message, with file names, paths (whole, spaces
+  included) and typed text taken out; Suggest a feature fills in the versions. The plugin opens no
+  connection: the links open in the browser only when clicked, and nothing
+  is sent until the form is submitted on GitHub. `t` works in every view,
+  the git changes list, the secrets question and a folder that can't be
+  listed included: in a list or the line view its button ends the footer
+  where it fits on a footer row already there, else it sits in the header
+  row, so it never costs the list a row. `f` goes back to the view it was opened from.
+  Off the terminal the button fits each surface's own footer, and the bug
+  link names the surface `t` was pressed on and that surface's pane size,
+  whichever surface draws the screen.
+- `r` in the folder list shows the last 10 files you added to the prompt from
+  this working directory, newest first, kept between sessions in the
+  plugin's own store (`$.store`). Enter, `l`, `m` and `p` work on them as
+  on any file, the filter narrows them, deleted files drop out, and secrets
+  files still ask first. README "Safety" says what is stored.
+- `p` previews the highlighted file under the folder list, the search
+  results, the recent files or the git changes: its first lines, read once
+  the arrows rest on it. It is off until you press `p` and stays on for the
+  session. Secrets files are never previewed (even after a yes), nor binary
+  files, links that lead out of the project or files over 64 KiB; each gets a
+  one-line notice instead. The preview shows only in a pane of at least 20
+  rows and 40 columns, and not in the mobile app, where a tap presses a row instead of
+  resting on it; one left on by another surface is ignored there. When
+  turning it on or off moves the highlighted row, the
+  highlight goes to the `p` button, so a second `p` turns it off again.
+- Several ranges from one file: in the line view, `k` keeps the range being
+  picked so another can be picked after it. Enter on the last line of the
+  final range, or `i`, puts them all in as separate mentions
+  (`@src/a.ts#L10-20 @src/a.ts#L80-95`), in line order, with overlapping or
+  touching ranges merged. Kept lines show `✓` in the gutter and are listed in
+  the status line; `x` clears them along with the start. The `keep range`
+  and `insert` buttons, reached with Tab, the arrows or a click, take the
+  range on screen just as the keys do, and clicking a line starts a range
+  there wherever the ring was. When those buttons wrap the footer, the view
+  scrolls to keep the highlighted line in view and the highlight stays on it.
+- `g` lists the files git sees as changed or untracked, with their status
+  (`M`, `A`, `R`, `??`, `UU`), filtered and picked like project search
+  results: Enter, `l`, `m`, `p` and `i` work on them. It runs two read-only
+  git commands, `git rev-parse --git-common-dir` and
+  `git status --porcelain=v1 -z`, pinned to the repository root with
+  `--work-tree` and `GIT_CEILING_DIRECTORIES`, and no other. Its flags turn
+  off optional locks, lazy fetch, fsmonitor, the untracked cache and
+  submodules, and read attributes from the empty tree with no global or
+  system attributes file, so a repository's `.gitattributes` can't make git
+  run a clean or process filter. It needs git 2.45 or newer. In a SHA-256
+  repository git may stop whenever it needs attributes, and the pane says so.
+  `info/attributes` in the git folder can't be skipped by any git flag, so
+  where git reports a folder holding it, `status` doesn't run. The README's
+  Safety section names both commands in full and says what git can still
+  run.
+  Outside a repository, or when git is missing, too old or fails, the pane
+  says why.
+- Clicks and taps in the desktop app, VS Code and the mobile app: pressing
+  `lines` or `mark` with no file highlighted arms it (`lines: pick a file`,
+  `done marking`), so the next file pressed opens line by line or is marked.
+  Folders still open while armed. The terminal is unchanged, and ignores an
+  action armed on another surface.
+- Kept line ranges by click or tap: off the terminal, pressing `keep range`
+  with only a range's start picked arms it (`keep: pick its last line`), so
+  the next line pressed ends the range and keeps it instead of putting it in;
+  a second press, `clear`, `files` or another file disarms it. A range the
+  arrows walked is kept by a click as on the terminal, which never arms and
+  ignores a keep armed elsewhere. Off the terminal the footer reserves room
+  for the armed label, so arming never pushes the lines past the pane.
+- Tests that draw and use the pane on all four surfaces (terminal, desktop,
+  VS Code, mobile), including short and narrow panes and a Windows working
+  directory.
+- README "Privacy" section: what the recent files list stores, where, how
+  long and how to clear it, that nothing is sent, and where to get support.
+  "What the hooks do" now lists all six hooks (`session.detach` and
+  `ui.close` were missing).
+
+### Fixed
+
+- Back from the line view (`f`), `m` and `l` work on the file the ring is on
+  again instead of asking you to arrow onto a file first.
+- In a pane under 39 columns the line view's footer (`files`, `whole file`,
+  `clear start`) wraps, and the rows it took were not counted, so the lines
+  ran past the pane and the arrows scrolled it instead of moving.
+  Counting them, starting a range there brought the `clear start` button,
+  whose wrap took a line from the view: the line just pressed dropped out of
+  it and the highlight landed on "more". The line view now scrolls to keep
+  the highlighted line in view when a range is started, ended or cleared,
+  and the highlight stays on it.
+- After `h` the highlight stayed at the same place on the screen while the
+  rows moved under it, so it sat on another row while `l` and `m` answered
+  "Arrow onto a file first". When `h` moves the highlighted row (its longer
+  label wrapping the footer can push the row out of view), the highlight
+  now goes to the `h` button, so a second `h` undoes it; when the
+  row stays put, it stays on it and `l` and `m` act on it. A highlight on a
+  footer or "more" button goes to the `h` button too, where before it slid
+  onto whatever took its place on the screen while `l`, `m` and Enter still
+  acted on the button it had been on.
+- When `m` brought or grew the `insert` button and that wrapped the footer
+  onto another row, the row just marked could drop out of view, with the
+  highlight landing on "more" while a second `m` unmarked the hidden row.
+  The list now scrolls to keep the highlighted row in view after `m` or `i`,
+  and the highlight stays on it.
+- The mobile app no longer draws an empty frame where the filter and find
+  boxes would be, or key hints it has no keys for; the list gets those rows.
+- A filter typed on another surface no longer hides files on mobile, where
+  there is no box to clear it, and tapping its `↓ N more` row pages the
+  list it shows rather than the filtered one, in the folder and in search.
+- The pane draws at 24 by 80 when a surface hasn't reported its size,
+  instead of failing to draw.
+- Line view status and toasts say "click" or "tap" off the terminal.
+- Clicking or tapping a `↑/↓ N more` row, on every surface including a mouse
+  click in the terminal, no longer pages one row too far and
+  skips a row: the press now pages from where the window was before the
+  focus that the click raised slid it.
+- A surface that left the session (or a closed pane) no longer steers a
+  `↑/↓ N more` tap on the mobile app with the pane size and filter it last
+  drew: the slide follows the surfaces still drawing, and reads the filter as
+  it is now rather than as last drawn.
+- With the terminal or desktop and the mobile app drawing one session at
+  once (Remote Control), arrowing onto a `↓ N more` row slides the keyboard
+  surface's own filtered list by its own pane size, so `l` and `m` act on
+  the row it shows rather than on a row of the phone's unfiltered list.
+- A click or tap on `↓ N more` that raises no focus of its own pages from
+  the window shown, not from where an earlier slide in another folder, in
+  search or before the ring moved on left it.
+- The git changes list (`g`) works like project search on every surface:
+  the mobile app shows git's whole list past a filter typed on the desktop,
+  pages it by its own rows (while the desktop draws and after it left), and
+  a slide left in search no longer pages it. A press on `h`, `p`, `m`, `i`
+  or a line view button counts the footer and rows of the surface it was
+  drawn on, not of whichever surface drew last.
+
 ## [0.4.3] - 2026-10-07
 
 ### Changed
@@ -137,6 +274,7 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Windows and macOS support (drive and UNC paths, NFD names) and CI on all
   three.
 
+[0.5.0]: https://github.com/SeanPeppers/claude-files/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/SeanPeppers/claude-files/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/SeanPeppers/claude-files/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/SeanPeppers/claude-files/compare/v0.4.0...v0.4.1

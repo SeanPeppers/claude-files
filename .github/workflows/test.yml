@@ -37,6 +37,14 @@ jobs:
           persist-credentials: false
       - name: Biome (lint + format)
         run: npx --yes @biomejs/biome@2.5.15 ci .
+      - name: Engine calls written plainly in tests too
+        # validate --strict checks hooks/ but skips tests/, where a cast,
+        # '!', '?.' or spread inside a $.noun.method(...) call breaks the
+        # plugin-directory rules all the same.
+        run: |
+          if grep -rnE '\$\.[a-zA-Z]+\.[a-zA-Z]+\([^;]*( as |!\)|\?\.|\.\.\.)' hooks tests; then
+            exit 1
+          fi
 
   typecheck:
     runs-on: ubuntu-latest
