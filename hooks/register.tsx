@@ -1634,6 +1634,37 @@ async function pressRow($: EngineInterface, path: string, surface: string) {
   return openLines($, path);
 }
 
+// Opens the pane as `/files` does; `bug` and `idea` open straight to the
+// Feedback screen.
+async function openPicker($: EngineInterface, args: string) {
+  const asked = args.trim().toLowerCase();
+  feedbackRing = "";
+  feedbackSurface = "";
+  await updateState($, "feedback", () =>
+    asked === "bug" || asked === "idea" ? "none" : "",
+  );
+  // The filter box opens empty, so the list must too.
+  await updateState($, "query", () => "");
+  await clearConfirm($);
+  // Reopening starts at the folder: a file shown before may have changed.
+  previewLines = undefined;
+  listing = undefined;
+  project = undefined;
+  peekView = undefined;
+  await updateState($, "search", () => false);
+  await updateState($, "recentView", () => false);
+  await updateState($, "preview", () => "");
+  await updateState($, "anchor", () => 0);
+  await updateState($, "kept", () => []);
+  await updateState($, "armed", () => "");
+  await $.ui.open({
+    id: PANE,
+    title: "Files",
+    focus: true,
+    closeOnEscape: true,
+  });
+}
+
 export const register: Register = (on) => {
   on("session.start", async ($, e, next) => {
     await $.command.register({
@@ -1646,33 +1677,7 @@ export const register: Register = (on) => {
   });
 
   on("command.run", { command: "files" }, async ($, e) => {
-    // `/files bug` and `/files idea` open straight to the Feedback screen.
-    const asked = (e.args ?? "").trim().toLowerCase();
-    feedbackRing = "";
-    feedbackSurface = "";
-    await updateState($, "feedback", () =>
-      asked === "bug" || asked === "idea" ? "none" : "",
-    );
-    // The filter box opens empty, so the list must too.
-    await updateState($, "query", () => "");
-    await clearConfirm($);
-    // Reopening starts at the folder: a file shown before may have changed.
-    previewLines = undefined;
-    listing = undefined;
-    project = undefined;
-    peekView = undefined;
-    await updateState($, "search", () => false);
-    await updateState($, "recentView", () => false);
-    await updateState($, "preview", () => "");
-    await updateState($, "anchor", () => 0);
-    await updateState($, "kept", () => []);
-    await updateState($, "armed", () => "");
-    await $.ui.open({
-      id: PANE,
-      title: "Files",
-      focus: true,
-      closeOnEscape: true,
-    });
+    await openPicker($, e.args ?? "");
     return { text: "File picker opened." };
   });
 
