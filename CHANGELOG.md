@@ -80,6 +80,10 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Tests that draw and use the pane on all four surfaces (terminal, desktop,
   VS Code, mobile), including short and narrow panes and a Windows working
   directory.
+- README "Privacy" section: what the recent files list stores, where, how
+  long and how to clear it, that nothing is sent, and where to get support.
+  "What the hooks do" now lists all six hooks (`session.detach` and
+  `ui.close` were missing).
 
 ### Fixed
 

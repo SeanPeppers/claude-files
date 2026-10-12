@@ -393,9 +393,32 @@ just cloned, so they're treated as untrusted:
 Found a security problem? Please report it privately, as [SECURITY.md](SECURITY.md)
 describes; for anything else, press `t` in the pane or open an issue.
 
+## Privacy
+
+- **What is stored:** the full paths of the last 10 files you added to the
+  prompt from each working directory, for the 50 working directories used
+  most recently. Secrets files are included. Only paths are stored: no file
+  contents, no prompts, nothing you typed.
+- **Where:** in the plugin's own store, a JSON file named `file-picker_….json`
+  in `plugins/store` under your Claude Code configuration folder (`~/.claude`
+  by default). It stays on your machine.
+- **How long:** until the path drops out. That happens when 10 newer files
+  push it off a directory's list, when its directory falls out of the 50 most
+  recent, or when you press `r` after the file was deleted or moved.
+- **How to clear it:** the plugin has no clear command yet. Delete that store
+  file to clear the list for every project.
+- **What is sent:** nothing. The plugin makes no network requests. The
+  Feedback links (`t`) open github.com in your browser only when you click
+  them, and nothing is sent until you submit the form there. Everything else
+  the pane remembers (folder, filter, marks, kept ranges) lasts only for the
+  session.
+- **Support:** [GitHub issues](https://github.com/SeanPeppers/claude-files/issues),
+  or `t` in the pane. Report security problems privately, as
+  [SECURITY.md](SECURITY.md) describes.
+
 ## What the hooks do
 
-The plugin is one mod (`hooks/register.tsx`) with four hooks. None of them
+The plugin is one mod (`hooks/register.tsx`) with six hooks. None of them
 changes what Claude or its tools do; they only add the pane.
 
 | Hook | What it does |
@@ -404,6 +427,8 @@ changes what Claude or its tools do; they only add the pane.
 | `command.run` (`/files` only) | opens the Files pane with an empty filter, or on the Feedback screen for `/files bug` and `/files idea`. It is matched to the `/files` command, so it never sees or changes any other command |
 | `ui.render` (the Files pane) | draws the folder list, the project search, the recent files, the git changes list, the line view (with any kept ranges), the secrets confirmation or the Feedback screen (two links to GitHub issue forms), with the elements the surface has (no text fields on mobile) |
 | `ui.focus` (the Files pane) | remembers the highlighted row for `l`, `m` and the preview, and when the arrows reach a `↑/↓ N more` row, slides the list one row (a click or tap that presses the row pages from where the list was before that slide). With the preview on, it starts a short timer whose end reads the highlighted file |
+| `session.detach` | forgets the pane size and layout the leaving surface (desktop, VS Code, phone) last drew, so it no longer steers paging, and passes the event on unchanged |
+| `ui.close` (the Files pane) | forgets every surface's pane size and layout when the pane closes, and passes the event on unchanged |
 
 Engine calls it makes: `$.command.register` (the `/files` command),
 `$.fs.list` and `$.fs.stat` (folder listings and file types; project search is `$.fs.list` alone, one folder per call; `r` checks each recent file still exists with `$.fs.stat`; `g` also stats `.git` in the working directory and each folder above it to find the repository root, then stats the git folder `git rev-parse` names), `$.fs.exists` (`g` checking that folder for `info/attributes`),
