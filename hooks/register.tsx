@@ -6,6 +6,7 @@ import {
   commonDirFrom,
   displayName,
   feedbackUrl,
+  filesAtEnd,
   findLine,
   fitCells,
   fitCellsStart,
@@ -1643,6 +1644,26 @@ export const register: Register = (on) => {
     await openPicker($, e.args ?? "");
     return { text: "File picker opened." };
   });
+
+  // Claude Code runs a command only at the start of a prompt, so `/files`
+  // typed after text would send the text to Claude. Instead the pane opens
+  // and the text goes back in the box. The prompt is only tested for that
+  // ending: never kept, logged, shown or sent anywhere. Only the person's own
+  // Enter at the terminal counts, and a prompt with images or other
+  // attachments goes through, as dropping it would lose them. Typed during a
+  // turn it is dropped all the same: the pane opens over a running turn as
+  // `/files` does, and the text waits in the box instead of the queue.
+  on("prompt.submit", async ($, e, next) => {
+    const asked = filesAtEnd(e.text);
+    if (!asked || e.origin.kind !== "composer" || e.attachments) return next(e);
+    await openPicker($, asked.args);
+    const refilled = await $.prompt
+      .fill({ text: `${asked.draft} `, mode: "replace" })
+      .catch(() => ({ isFilled: false }));
+    // A box that won't take the draft back would lose it: send it as typed.
+    if (!refilled.isFilled) return next(e);
+    return { drop: "Opened the file picker; your text is back in the prompt." };
+  }).catch((_$, e, next) => next(e));
 
   // A surface that stops drawing the pane stops steering it: a client that
   // leaves takes its rows with it, and a closed pane is drawn nowhere.

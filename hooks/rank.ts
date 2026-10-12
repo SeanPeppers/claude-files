@@ -1004,3 +1004,14 @@ export const feedbackUrl = (kind: "bug" | "idea", facts: FeedbackFacts) => {
     keep = Math.max(0, keep - Math.ceil((url.length - LINK_MAX) / 12));
   }
 };
+
+// A prompt that ends in ` /files` (or `/files bug`, `/files idea`) asks for
+// the pane: Claude Code runs a command only at the start of a prompt. Gives
+// the text before it and the command's args; undefined for any other prompt.
+export const filesAtEnd = (text: string) => {
+  const found = /\s\/files(?:\s+(\S+))?$/.exec(text.trim());
+  if (!found) return undefined;
+  const args = (found[1] ?? "").toLowerCase();
+  if (args && args !== "bug" && args !== "idea") return undefined;
+  return { draft: text.trim().slice(0, found.index).trimEnd(), args };
+};
