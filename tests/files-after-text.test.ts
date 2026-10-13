@@ -375,3 +375,28 @@ test("edits that don't end the box in /files at the cursor are left alone", asyn
   expect(log.opened).toBe(0);
   expect(log.filled).toEqual([]);
 });
+
+test("the pane shows the held text, cut to fit, on every surface", async ($, on) => {
+  const clock = mock.clock(on);
+  seen(on);
+  const shown = async () => {
+    const found: (string | undefined)[] = [];
+    for (const surface of ["terminal", "desktop", "vscode", "mobile"]) {
+      const ui = await mount($, surface);
+      found.push((await ui.find({ type: "Text", text: /^Your text:/ }))?.text);
+      await ui.unmount();
+    }
+    return found;
+  };
+  expect(await shown()).toEqual(Array(4).fill(undefined));
+  await edit($, "", 0, `fix the\nlogin ${"x".repeat(100)} /files`);
+  await clock.advance(30);
+  const lines = await shown();
+  for (const line of lines) {
+    expect(line).toStartWith("Your text: fix the login xxx");
+    expect(line).toEndWith("…");
+    expect(line?.length).toBe(80);
+  }
+  await end($);
+  expect(await shown()).toEqual(Array(4).fill(undefined));
+});
