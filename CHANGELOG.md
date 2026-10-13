@@ -87,12 +87,13 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Claude, since Claude Code runs a command only at the start of a prompt.
   A new `prompt.submit` hook now catches a prompt you typed that ends in
   `/files` (or `/files bug`, `/files idea`): it opens the pane as `/files`
-  does and puts the text before it back in the prompt box, and Claude gets
-  nothing. It checks only that ending and never stores, logs, shows or sends
-  the prompt. Other prompts, prompts with images, prompts from plugins,
-  peers, notifications, the SDK or Remote Control, and any prompt whose text
-  can't be put back go through unchanged. The README's hooks table now lists
-  all seven hooks.
+  does and holds the prompt back, so Claude gets nothing. Claude Code puts
+  the text back in the prompt box and the plugin cuts the `/files` ending;
+  `ctrl+x` then `Tab` moves into the pane. It checks only that ending and
+  never stores, logs, shows or sends the prompt. Other prompts, prompts with
+  images, prompts from plugins, peers, notifications, the SDK or Remote
+  Control, and any prompt that hits an error before the pane opens go
+  through unchanged. The README's hooks table now lists all seven hooks.
 - Back from the line view (`f`), `m` and `l` work on the file the ring is on
   again instead of asking you to arrow onto a file first.
 - In a pane under 39 columns the line view's footer (`files`, `whole file`,

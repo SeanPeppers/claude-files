@@ -1,4 +1,4 @@
-import { expect } from "claude-code/testing";
+import { expect, mock } from "claude-code/testing";
 import { filesAtEnd } from "../hooks/rank";
 import { test } from "./kit";
 import { posix } from "./posix";
@@ -6,8 +6,23 @@ import { posix } from "./posix";
 // `/files` typed at the end of a prompt opens the pane instead of sending the
 // prompt; everything else reaches Claude as typed.
 
-const seen = (on: any, opens = () => ({ value: { isPlaced: true } })) => {
-  const log = { opened: 0, filled: [] as string[], passed: [] as string[] };
+// `box` gives what the prompt box holds at each read after a drop; left
+// out, the box holds the dropped prompt, as Claude Code puts it back.
+const seen = (
+  on: any,
+  opens = () => ({ value: { isPlaced: true } }),
+  box?: (read: number) => string,
+) => {
+  const log = {
+    opened: 0,
+    filled: [] as string[],
+    passed: [] as string[],
+    last: "",
+  };
+  let reads = 0;
+  on("prompt.read", () => ({
+    value: { text: box ? box(reads++) : log.last, cursor: 0 },
+  }));
   on("session.cwd", () => ({ value: "/p" }));
   on("session.version", () => ({ value: { version: "2.1.291" } }));
   on("fs.list", (_: any, e: any) => {
@@ -41,7 +56,13 @@ const seen = (on: any, opens = () => ({ value: { isPlaced: true } })) => {
   return log;
 };
 
-const submit = ($: any, text: string, extra: object = {}) => {
+const submit = (
+  $: any,
+  text: string,
+  extra: object = {},
+  log?: { last: string },
+) => {
+  if (log) log.last = text;
   const input = {
     text,
     wait: false,
@@ -68,11 +89,15 @@ const mount = ($: any) =>
   });
 
 test("text then /files opens the pane, drops the prompt and puts the text back", async ($, on) => {
+  const clock = mock.clock(on);
   const log = seen(on);
-  const result = await submit($, "  explain this\n /files  ");
+  const result = await submit($, "  explain this\n /files  ", {}, log);
   expect(result.drop).toBeDefined();
   expect(result.drop).not.toContain("explain");
+  expect(result.drop).toContain("ctrl+x");
   expect(log.opened).toBe(1);
+  expect(log.filled).toEqual([]);
+  await clock.advance(100);
   expect(log.filled).toEqual(["replace:explain this "]);
   expect(log.passed).toEqual([]);
   const ui = await mount($);
@@ -82,9 +107,11 @@ test("text then /files opens the pane, drops the prompt and puts the text back",
 });
 
 test("text then /files bug opens on the Feedback screen", async ($, on) => {
+  const clock = mock.clock(on);
   const log = seen(on);
-  const result = await submit($, "it broke /files BUG", { turnId: "t1" });
+  const result = await submit($, "it broke /files BUG", { turnId: "t1" }, log);
   expect(result.drop).toBeDefined();
+  await clock.advance(100);
   expect(log.filled).toEqual(["replace:it broke "]);
   const ui = await mount($);
   expect(await ui.find({ type: "Link", text: "Report a bug" })).toBeDefined();
@@ -138,14 +165,37 @@ test("the parser keeps the draft and the args", async () => {
   expect(filesAtEnd("a /files x")).toBeUndefined();
 });
 
-test("a box that won't take the draft back lets the prompt through", async ($, on) => {
-  on("ui.open", () => ({ value: { isPlaced: true } }));
-  on("prompt.fill", () => ({ isFilled: false, refusal: "dialog" }));
-  const passed: string[] = [];
-  on("prompt.submit", (_: any, e: any) => {
-    passed.push(e.text);
-    return { text: e.text };
-  });
-  expect((await submit($, "hi /files")).text).toBe("hi /files");
-  expect(passed).toEqual(["hi /files"]);
+test("text typed into the box after the drop is left alone", async ($, on) => {
+  const clock = mock.clock(on);
+  const log = seen(on, undefined, () => "hi /files and more");
+  expect((await submit($, "hi /files", {}, log)).drop).toBeDefined();
+  await clock.advance(100);
+  expect(log.filled).toEqual([]);
+  expect(log.opened).toBe(1);
+});
+
+test("text put back late, or never, still ends up in the box", async ($, on) => {
+  const clock = mock.clock(on);
+  const late = seen(on, undefined, (read) => (read < 2 ? "" : "hi /files"));
+  await submit($, "hi /files", {}, late);
+  await clock.advance(100);
+  expect(late.filled).toEqual([]);
+  await clock.advance(400);
+  expect(late.filled).toEqual(["replace:hi "]);
+});
+
+test("a box that is never refilled gets the text back from the plugin", async ($, on) => {
+  const clock = mock.clock(on);
+  const log = seen(on, undefined, () => "");
+  await submit($, "hi /files", {}, log);
+  await clock.advance(500);
+  expect(log.filled).toEqual(["replace:hi "]);
+});
+
+test("text already in the box stays in front of the cut prompt", async ($, on) => {
+  const clock = mock.clock(on);
+  const log = seen(on, undefined, () => "draft\nhi /files\n");
+  await submit($, "hi /files", {}, log);
+  await clock.advance(500);
+  expect(log.filled).toEqual(["replace:draft\nhi "]);
 });

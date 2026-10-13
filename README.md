@@ -89,7 +89,9 @@ To update later: `claude plugin update file-picker@claude-files`.
   code lives.
 - **Halfway through a sentence.** Type `why does this log users out /files`
   and press Enter: the pane opens, the text goes back in the prompt, and
-  Claude gets nothing until you pick the file and press Enter again. (Claude
+  Claude gets nothing until you pick the file and press Enter again. Press
+  `ctrl+x` then `Tab` to move into the pane: Claude Code gives the keys
+  back to the prompt box after a hook holds a prompt back. (Claude
   Code runs `/files` only at the start of a prompt; at the end the plugin
   catches it.)
 - **Hand over exact lines.** Press `l` on a long file, press Enter on line 120
@@ -410,7 +412,7 @@ prompt that ends in `/files` so it opens the pane instead.
 |---|---|
 | `session.start` | registers the `/files` command |
 | `command.run` (`/files` only) | opens the Files pane with an empty filter, or on the Feedback screen for `/files bug` and `/files idea`. It is matched to the `/files` command, so it never sees or changes any other command |
-| `prompt.submit` | when you press Enter on a prompt that ends in ` /files` (or ` /files bug`, ` /files idea`), opens the pane as `/files` does, puts the text before it back in the prompt box and keeps the prompt from Claude. It checks only that ending and never stores, logs, shows or sends the prompt. Every other prompt, a prompt with images attached, and any prompt not typed by you at the prompt (a plugin's, a peer session's, a notification, the SDK's, Remote Control's) goes through unchanged, as does one whose text can't be put back or that hits an error |
+| `prompt.submit` | when you press Enter on a prompt that ends in ` /files` (or ` /files bug`, ` /files idea`), opens the pane as `/files` does, keeps the prompt from Claude and, once Claude Code has put the text back in the prompt box, cuts the `/files` ending. It checks only that ending and never stores, logs, shows or sends the prompt. Every other prompt, a prompt with images attached, and any prompt not typed by you at the prompt (a plugin's, a peer session's, a notification, the SDK's, Remote Control's) goes through unchanged, as does one that hits an error before the pane opens |
 | `ui.render` (the Files pane) | draws the folder list, the project search, the recent files, the git changes list, the line view (with any kept ranges), the secrets confirmation or the Feedback screen (two links to GitHub issue forms), with the elements the surface has (no text fields on mobile) |
 | `ui.focus` (the Files pane) | remembers the highlighted row for `l`, `m` and the preview, and when the arrows reach a `↑/↓ N more` row, slides the list one row (a click or tap that presses the row pages from where the list was before that slide). With the preview on, it starts a short timer whose end reads the highlighted file |
 | `session.detach`, `ui.close` (the Files pane) | forget which surfaces draw the pane, when a client leaves or the pane closes |
