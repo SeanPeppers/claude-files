@@ -1068,6 +1068,7 @@ async function pick(
     );
     return false;
   }
+  await releaseDraft($);
   const filled = await $.prompt
     .fill({ text: mention, mode: "insert" })
     .catch(() => ({ isFilled: false }));
@@ -1471,6 +1472,7 @@ async function insertMarked($: EngineInterface, surface: string) {
     return showToast($, `Nothing added. ${skips}`, names);
   }
   const text = [...mentions].join("");
+  await releaseDraft($);
   const filled = await $.prompt
     .fill({ text, mode: "insert" })
     .catch(() => ({ isFilled: false }));
@@ -1629,17 +1631,60 @@ async function openPicker($: EngineInterface, args: string) {
   });
 }
 
+// Claude Code hands a pane the keys only over an empty prompt box, and takes
+// them back the moment the box changes. So the text typed before `/files`
+// waits here, in memory, while the pane holds the keys, and goes back in
+// front of whatever the box then holds on a pick or when the pane closes. It
+// is never stored, logged, toasted or put in a feedback link. ponytail:
+// memory only, so a plugin reload while it is held loses it (the engine
+// closes the pane without running this plugin's hooks); keep the pane open
+// for as short as the pick takes.
+let heldDraft = "";
+
+function holdDraft($: EngineInterface, draft: string) {
+  heldDraft = heldDraft && draft ? `${heldDraft} ${draft}` : heldDraft || draft;
+  $.ui.invalidate("ui.render");
+}
+
+// A box that can't be read or written keeps the text held, to try again.
+async function releaseDraft($: EngineInterface) {
+  const draft = heldDraft;
+  if (draft === "") return;
+  heldDraft = "";
+  $.ui.invalidate("ui.render");
+  const box = await $.prompt.read().catch(() => undefined);
+  const rest = box ? box.text.trimStart() : "";
+  const filled = box
+    ? await $.prompt
+        .fill({
+          text: rest ? `${draft} ${rest}` : `${draft} `,
+          mode: "replace",
+        })
+        .catch(() => ({ isFilled: false }))
+    : { isFilled: false };
+  if (!filled.isFilled) holdDraft($, draft);
+}
+
+// Asked for again over an emptied box, the pane gets the keys; one that fails
+// to open gives the text straight back.
+async function openWithKeys($: EngineInterface, draft: string, args: string) {
+  const emptied = await $.prompt.fill({ text: "", mode: "replace" });
+  if (emptied.isFilled) holdDraft($, draft);
+  await openPicker($, args).catch(() => releaseDraft($));
+}
+
 // Claude Code puts a dropped prompt back in the box, after whatever the box
-// holds, and gives the keys back to the box, so a pane can't keep them; the
-// drop says how to move into it. Once the text is back, its `/files` ending
-// is cut. The waits allow for a slow put-back; text never put back is put
-// back here, and text typed meanwhile is left alone.
+// held, which takes the keys from the pane. Once it is back, all of it but the
+// `/files` ending is held and the pane asked for again. The waits allow for a
+// slow put-back; text never put back is held all the same, and text typed
+// meanwhile is left alone.
 const SETTLE_WAITS_MS = [50, 100, 250];
 
-async function settleAfterDrop(
+async function takeKeysAfterDrop(
   $: EngineInterface,
   typed: string,
   draft: string,
+  args: string,
 ) {
   const sent = typed.trim();
   for (const wait of SETTLE_WAITS_MS) {
@@ -1650,12 +1695,12 @@ async function settleAfterDrop(
       // Only text that was in the box before stays in front, not the blanks
       // the prompt started with.
       const before = kept.slice(0, kept.length - sent.length).trimStart();
-      await $.prompt.fill({ text: `${before}${draft} `, mode: "replace" });
+      await openWithKeys($, `${before}${draft}`, args);
       return;
     }
     if (kept !== "") return;
   }
-  await $.prompt.fill({ text: `${draft} `, mode: "replace" });
+  await openWithKeys($, draft, args);
 }
 
 export const register: Register = (on) => {
@@ -1676,30 +1721,38 @@ export const register: Register = (on) => {
 
   // Claude Code runs a command only at the start of a prompt, so `/files`
   // typed after text would send the text to Claude. Instead the pane opens
-  // and the text goes back in the box. The prompt is only tested for that
-  // ending: never kept, logged, shown or sent anywhere. Only the person's own
-  // Enter at the terminal counts, and a prompt with images or other
-  // attachments goes through, as dropping it would lose them. Typed during a
-  // turn it is dropped all the same: the pane opens over a running turn as
-  // `/files` does, and the text waits in the box instead of the queue.
+  // and the text is held until a pick or the pane closes (heldDraft). The
+  // prompt is only tested for that ending and held in memory: never stored,
+  // logged or sent anywhere. Only the person's own Enter at the terminal
+  // counts, and a prompt with images or other attachments goes through, as
+  // dropping it would lose them. Typed during a turn it is dropped all the
+  // same: the pane opens over a running turn as `/files` does.
   on("prompt.submit", async ($, e, next) => {
     const asked = filesAtEnd(e.text);
     if (!asked || e.origin.kind !== "composer" || e.attachments) return next(e);
     await openPicker($, asked.args);
-    void settleAfterDrop($, e.text, asked.draft).catch(() => undefined);
-    return {
-      drop: "Files open: ctrl+x then Tab moves into the pane. Your text stays in the prompt.",
-    };
+    void takeKeysAfterDrop($, e.text, asked.draft, asked.args).catch(
+      () => undefined,
+    );
+    return { drop: "Files open." };
   }).catch((_$, e, next) => next(e));
 
   // A surface that stops drawing the pane stops steering it: a client that
-  // leaves takes its rows with it, and a closed pane is drawn nowhere.
-  on("session.detach", (_$, e, next) => {
+  // leaves takes its rows with it, and a closed pane is drawn nowhere. Held
+  // text goes back to the box once nothing draws the pane, and at the end.
+  on("session.detach", ($, e, next) => {
     drawnOn.delete(e.surface);
+    if (drawnOn.size === 0) void releaseDraft($).catch(() => undefined);
     return next(e);
   });
-  on("ui.close", { id: PANE }, (_$, e, next) => {
+  on("ui.close", { id: PANE }, async ($, e, next) => {
     drawnOn.clear();
+    const result = await next(e);
+    void releaseDraft($).catch(() => undefined);
+    return result;
+  }).catch((_$, e, next) => next(e));
+  on("session.end", async ($, e, next) => {
+    await releaseDraft($).catch(() => undefined);
     return next(e);
   }).catch((_$, e, next) => next(e));
 
