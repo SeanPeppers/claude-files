@@ -4,24 +4,28 @@ import { test } from "./kit";
 import { posix } from "./posix";
 
 // `/files` typed at the end of a prompt opens the pane instead of sending the
-// prompt; everything else reaches Claude as typed.
+// prompt; everything else reaches Claude as typed. The text before it is held
+// out of the box while the pane has the keys, and goes back on a pick or when
+// the pane closes.
 
-// `box` gives what the prompt box holds at each read after a drop; left
-// out, the box holds the dropped prompt, as Claude Code puts it back.
+// `read` gives what the prompt box holds at each read; left out, or answering
+// undefined, the box holds what the fills and the put-back left in it.
 const seen = (
   on: any,
-  opens = () => ({ value: { isPlaced: true } }),
-  box?: (read: number) => string,
+  opens = (_n: number) => ({ value: { isPlaced: true } }),
+  read?: (n: number) => string | undefined,
 ) => {
   const log = {
     opened: 0,
     filled: [] as string[],
     passed: [] as string[],
-    last: "",
+    toasts: [] as string[],
+    stored: [] as string[],
+    box: "",
   };
   let reads = 0;
   on("prompt.read", () => ({
-    value: { text: box ? box(reads++) : log.last, cursor: 0 },
+    value: { text: read?.(reads++) ?? log.box, cursor: 0 },
   }));
   on("session.cwd", () => ({ value: "/p" }));
   on("session.version", () => ({ value: { version: "2.1.291" } }));
@@ -41,12 +45,25 @@ const seen = (
       isLink: false,
     },
   }));
+  on("store.get", () => ({ value: undefined }));
+  on("store.set", (_: any, e: any) => {
+    log.stored.push(JSON.stringify(e.value));
+    return { value: undefined };
+  });
+  on("ui.toast", (_: any, e: any) => {
+    log.toasts.push(String(e.text));
+    return { value: undefined };
+  });
+  on("ui.focus", () => ({ value: {} }));
+  on("session.end", (_: any, e: any) => ({ sessionId: e.sessionId }));
+  on("session.detach", (_: any, e: any) => ({ clientId: e.clientId }));
   on("ui.open", () => {
     log.opened++;
-    return opens();
+    return opens(log.opened);
   });
   on("prompt.fill", (_: any, e: any) => {
     log.filled.push(`${e.mode}:${e.text}`);
+    log.box = e.mode === "replace" ? e.text : `${log.box}${e.text}`;
     return { isFilled: true };
   });
   on("prompt.submit", (_: any, e: any) => {
@@ -56,26 +73,33 @@ const seen = (
   return log;
 };
 
-const submit = (
+// Enter on the box: the engine clears it, and puts a dropped prompt back.
+const submit = async (
   $: any,
   text: string,
   extra: object = {},
-  log?: { last: string },
+  log?: { box: string },
 ) => {
-  if (log) log.last = text;
-  const input = {
+  if (log) log.box = "";
+  const result = await $.prompt.submit({
     text,
     wait: false,
     origin: { kind: "composer" },
     ...extra,
-  };
-  return $.prompt.submit(input);
+  });
+  if (log && "drop" in result) log.box = text;
+  return result;
 };
 
-const mount = ($: any) =>
+// The kit can't raise `ui.close` (Esc is the engine's), so the session's end,
+// which puts the held text back the same way, stands in for it.
+const end = ($: any) =>
+  $.session.end({ reason: "clear", sessionId: "s", resume: { id: "s" } });
+
+const mount = ($: any, surface = "terminal") =>
   $.ui.mount({
     plugin: "file-picker",
-    surface: "terminal",
+    surface,
     component: "Pane",
     requestId: "file-picker",
     props: {
@@ -88,17 +112,16 @@ const mount = ($: any) =>
     },
   });
 
-test("text then /files opens the pane, drops the prompt and puts the text back", async ($, on) => {
+test("text then /files drops the prompt, holds the text and asks for the keys over an empty box", async ($, on) => {
   const clock = mock.clock(on);
   const log = seen(on);
   const result = await submit($, "  explain this\n /files  ", {}, log);
-  expect(result.drop).toBeDefined();
-  expect(result.drop).not.toContain("explain");
-  expect(result.drop).toContain("ctrl+x");
+  expect(result.drop).toBe("Files open.");
   expect(log.opened).toBe(1);
-  expect(log.filled).toEqual([]);
   await clock.advance(100);
-  expect(log.filled).toEqual(["replace:explain this "]);
+  expect(log.filled).toEqual(["replace:"]);
+  expect(log.box).toBe("");
+  expect(log.opened).toBe(2);
   expect(log.passed).toEqual([]);
   const ui = await mount($);
   expect(await ui.find({ key: "row:a.ts" })).toBeDefined();
@@ -106,16 +129,63 @@ test("text then /files opens the pane, drops the prompt and puts the text back",
   await ui.unmount();
 });
 
-test("text then /files bug opens on the Feedback screen", async ($, on) => {
+test("a pick puts the held text back in front of the mention", async ($, on) => {
   const clock = mock.clock(on);
   const log = seen(on);
-  const result = await submit($, "it broke /files BUG", { turnId: "t1" }, log);
-  expect(result.drop).toBeDefined();
+  await submit($, "explain this /files", {}, log);
   await clock.advance(100);
-  expect(log.filled).toEqual(["replace:it broke "]);
   const ui = await mount($);
-  expect(await ui.find({ type: "Link", text: "Report a bug" })).toBeDefined();
+  await ui.press({ key: "row:a.ts" });
+  expect(log.box).toBe("explain this @a.ts ");
+  expect(log.filled.slice(1)).toEqual([
+    "replace:explain this ",
+    "insert:@a.ts ",
+  ]);
   await ui.unmount();
+  await end($);
+  await clock.advance(10);
+  expect(log.box).toBe("explain this @a.ts ");
+});
+
+test("the session ending puts the held text back", async ($, on) => {
+  const clock = mock.clock(on);
+  const log = seen(on);
+  await submit($, "explain this /files", {}, log);
+  await clock.advance(100);
+  await end($);
+  await clock.advance(10);
+  expect(log.box).toBe("explain this ");
+});
+
+test("text typed in the box meanwhile stays, the held text in front of it", async ($, on) => {
+  const clock = mock.clock(on);
+  const log = seen(on);
+  await submit($, "explain this /files", {}, log);
+  await clock.advance(100);
+  log.box = "and this";
+  await end($);
+  await clock.advance(10);
+  expect(log.box).toBe("explain this and this");
+});
+
+test("text then /files bug opens on the Feedback screen, the text out of its links", async ($, on) => {
+  const clock = mock.clock(on);
+  const log = seen(on);
+  const result = await submit($, "secret plan /files BUG", {}, log);
+  expect(result.drop).toBe("Files open.");
+  await clock.advance(100);
+  expect(log.box).toBe("");
+  const ui = await mount($);
+  const links = await ui.findAll({ type: "Link" });
+  expect(links).toHaveLength(2);
+  for (const link of links)
+    expect(decodeURIComponent(String(link.props.href))).not.toContain("secret");
+  await ui.unmount();
+  await end($);
+  await clock.advance(10);
+  expect(log.box).toBe("secret plan ");
+  expect(log.toasts.join()).not.toContain("secret");
+  expect(log.stored.join()).not.toContain("secret");
 });
 
 test("other prompts reach Claude unchanged", async ($, on) => {
@@ -158,6 +228,17 @@ test("a pane that fails to open lets the prompt through as typed", async ($, on)
   expect(log.filled).toEqual([]);
 });
 
+test("a pane that fails to open the second time gives the text back", async ($, on) => {
+  const clock = mock.clock(on);
+  const log = seen(on, (n) => {
+    if (n > 1) throw new Error("no pane");
+    return { value: { isPlaced: true } };
+  });
+  await submit($, "hi /files", {}, log);
+  await clock.advance(100);
+  expect(log.box).toBe("hi ");
+});
+
 test("the parser keeps the draft and the args", async () => {
   expect(filesAtEnd("a b /files")).toEqual({ draft: "a b", args: "" });
   expect(filesAtEnd("a\t/files\tidea ")).toEqual({ draft: "a", args: "idea" });
@@ -169,33 +250,61 @@ test("text typed into the box after the drop is left alone", async ($, on) => {
   const clock = mock.clock(on);
   const log = seen(on, undefined, () => "hi /files and more");
   expect((await submit($, "hi /files", {}, log)).drop).toBeDefined();
-  await clock.advance(100);
+  await clock.advance(500);
   expect(log.filled).toEqual([]);
   expect(log.opened).toBe(1);
 });
 
-test("text put back late, or never, still ends up in the box", async ($, on) => {
+test("text put back late, or never, is held all the same", async ($, on) => {
   const clock = mock.clock(on);
-  const late = seen(on, undefined, (read) => (read < 2 ? "" : "hi /files"));
+  const late = seen(on, undefined, (n) =>
+    n < 2 ? "" : n === 2 ? "hi /files" : undefined,
+  );
   await submit($, "hi /files", {}, late);
   await clock.advance(100);
   expect(late.filled).toEqual([]);
   await clock.advance(400);
-  expect(late.filled).toEqual(["replace:hi "]);
+  expect(late.filled).toEqual(["replace:"]);
+  await end($);
+  await clock.advance(10);
+  expect(late.box).toBe("hi ");
 });
 
-test("a box that is never refilled gets the text back from the plugin", async ($, on) => {
+test("a box that is never refilled gets the text back when the pane closes", async ($, on) => {
   const clock = mock.clock(on);
   const log = seen(on, undefined, () => "");
   await submit($, "hi /files", {}, log);
   await clock.advance(500);
-  expect(log.filled).toEqual(["replace:hi "]);
+  expect(log.filled).toEqual(["replace:"]);
+  await end($);
+  await clock.advance(10);
+  expect(log.filled).toEqual(["replace:", "replace:hi "]);
 });
 
-test("text already in the box stays in front of the cut prompt", async ($, on) => {
+test("text already in the box stays in front of the held text", async ($, on) => {
   const clock = mock.clock(on);
-  const log = seen(on, undefined, () => "draft\nhi /files\n");
+  const log = seen(on, undefined, (n) =>
+    n === 0 ? "draft\nhi /files\n" : undefined,
+  );
   await submit($, "hi /files", {}, log);
-  await clock.advance(500);
-  expect(log.filled).toEqual(["replace:draft\nhi "]);
+  await clock.advance(100);
+  await end($);
+  await clock.advance(10);
+  expect(log.box).toBe("draft\nhi ");
+});
+
+test("the last surface drawing the pane leaving puts the held text back", async ($, on) => {
+  const clock = mock.clock(on);
+  const log = seen(on);
+  await submit($, "explain this /files", {}, log);
+  await clock.advance(100);
+  const ui = await mount($, "desktop");
+  await ui.unmount();
+  await $.session.detach({
+    surface: "desktop",
+    clientId: "c",
+    reason: "detach",
+  });
+  await clock.advance(10);
+  expect(log.box).toBe("explain this ");
 });
