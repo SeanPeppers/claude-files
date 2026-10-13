@@ -105,7 +105,10 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   when the last surface drawing it leaves or when the session ends. It is
   never stored, logged, toasted or put in a feedback link. A plugin reload
   while the pane holds text loses that text, and a word that starts with
-  `/files` (`/filesystem`) typed after text opens the pane too. Other
+  `/files` (`/filesystem`) typed after text opens the pane too. On a
+  terminal under 144 columns typing puts the text back with its `/files`
+  and Enter opens the pane, since Claude Code shows a pane opened by typing
+  only from that width. Other
   prompts, prompts with images, prompts from plugins, peers, notifications,
   the SDK or Remote Control, and any prompt that hits an error before the
   pane opens go through unchanged. The README's hooks table now lists all

@@ -413,3 +413,28 @@ test("a box that can't be emptied keeps the text where it is", async ($, on) => 
   await end($);
   expect(log.box).toBe("hi /files");
 });
+
+test("a pane that waits undrawn after typing gives the text back with its /files", async ($, on) => {
+  const clock = mock.clock(on);
+  const log = seen(on, () => ({ value: { isPlaced: false } }));
+  on("ui.close", () => ({ value: undefined }));
+  expect(await edit($, "hi /file", 8, "s")).toEqual({ text: "", cursor: 0 });
+  await clock.advance(30);
+  expect(log.box).toBe("hi /files ");
+  const ui = await mount($);
+  expect(await ui.find({ text: "Your text: hi" })).toBeUndefined();
+  await ui.unmount();
+});
+
+test("an undrawn pane over a box that won't take the text back keeps it held", async ($, on) => {
+  const clock = mock.clock(on);
+  const log = seen(on, () => ({ value: { isPlaced: false } }));
+  on("ui.close", () => ({ value: undefined }));
+  log.refuse = true;
+  await edit($, "hi /file", 8, "s");
+  await clock.advance(30);
+  expect(log.box).toBe("");
+  log.refuse = false;
+  await end($);
+  expect(log.box).toBe("hi ");
+});

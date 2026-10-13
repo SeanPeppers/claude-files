@@ -35,7 +35,7 @@ function wire(on: any, fills: (boolean | "throws")[] = []) {
   });
   on("fs.read", (_: any, e: any) => ({ value: FILES[posix(e.path) ?? ""] }));
   on("ui.focus", () => ({ value: {} }));
-  on("ui.open", () => ({ value: undefined }));
+  on("ui.open", () => ({ value: { isPlaced: true } }));
   on("ui.toast", (_: any, e: any) => {
     log.toasts.push(String(e.text));
     return { value: undefined };

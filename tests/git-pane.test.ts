@@ -139,7 +139,7 @@ function wire(
   }));
   on("fs.read", () => ({ value: "one\ntwo\nthree\n" }));
   on("ui.focus", () => ({ value: {} }));
-  on("ui.open", () => ({ value: undefined }));
+  on("ui.open", () => ({ value: { isPlaced: true } }));
   on("ui.toast", (_: any, e: any) => {
     log.toasts.push(e.text);
     return { value: undefined };
