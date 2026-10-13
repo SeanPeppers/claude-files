@@ -98,7 +98,9 @@ To update later: `claude plugin update file-picker@claude-files`.
   end the plugin catches it. Claude Code gives a pane the keyboard only over
   an empty prompt box, so the text waits in the plugin's memory meanwhile.
   A word that starts with `/files`, like `/filesystem`, typed after text
-  opens the pane too.)
+  opens the pane too. On a terminal under 144 columns a pane opened by
+  typing can't be shown, so the text is put back with its `/files` and
+  Enter opens it.)
 - **Hand over exact lines.** Press `l` on a long file, press Enter on line 120
   and again on line 145, then ask "simplify this loop". The prompt gets
   `@src/report.py#L120-145`, so Claude reads those 26 lines rather than the

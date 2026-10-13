@@ -41,7 +41,7 @@ function wire(on: any) {
   });
   on("fs.read", (_: any, e: any) => ({ value: FILES[posix(e.path) ?? ""] }));
   on("ui.focus", () => ({ value: {} }));
-  on("ui.open", () => ({ value: undefined }));
+  on("ui.open", () => ({ value: { isPlaced: true } }));
   on("ui.toast", () => ({ value: undefined }));
   on("prompt.fill", (_: any, e: any) => {
     log.filled.push(e.text);

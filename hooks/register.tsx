@@ -1623,12 +1623,13 @@ async function openPicker($: EngineInterface, args: string) {
   await updateState($, "anchor", () => 0);
   await updateState($, "kept", () => []);
   await updateState($, "armed", () => "");
-  await $.ui.open({
+  const opened = await $.ui.open({
     id: PANE,
     title: "Files",
     focus: true,
     closeOnEscape: true,
   });
+  return opened.isPlaced;
 }
 
 // Claude Code hands a pane the keys only over an empty prompt box, and takes
@@ -1647,7 +1648,7 @@ function holdDraft($: EngineInterface, draft: string) {
 }
 
 // A box that can't be read or written keeps the text held, to try again.
-async function releaseDraft($: EngineInterface) {
+async function releaseDraft($: EngineInterface, ending = "") {
   const draft = heldDraft;
   if (draft === "") return;
   heldDraft = "";
@@ -1657,7 +1658,7 @@ async function releaseDraft($: EngineInterface) {
   const filled = box
     ? await $.prompt
         .fill({
-          text: rest ? `${draft} ${rest}` : `${draft} `,
+          text: rest ? `${draft}${ending} ${rest}` : `${draft}${ending} `,
           mode: "replace",
         })
         .catch(() => ({ isFilled: false }))
@@ -1678,7 +1679,17 @@ async function openWithKeys($: EngineInterface, draft: string, args: string) {
 async function openAfterEdit($: EngineInterface, draft: string) {
   holdDraft($, draft);
   await $.clock.sleep(30);
-  await openPicker($, "").catch(() => releaseDraft($));
+  const placed = await openPicker($, "").catch(() => false);
+  if (!placed) await giveBackTyped($);
+}
+
+// A pane opened by typing, not by a command or Enter, waits undrawn on a
+// terminal under 144 columns. Then the text goes back with its `/files`, so
+// Enter opens the pane, which places it at any width.
+async function giveBackTyped($: EngineInterface) {
+  // Put back before the close, whose own put-back would leave out `/files`.
+  await releaseDraft($, " /files");
+  await $.ui.close({ id: PANE }).catch(() => undefined);
 }
 
 // Claude Code puts a dropped prompt back in the box, after whatever the box
