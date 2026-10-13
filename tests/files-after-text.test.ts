@@ -22,6 +22,7 @@ const seen = (
     toasts: [] as string[],
     stored: [] as string[],
     box: "",
+    refuse: false,
   };
   let reads = 0;
   on("prompt.read", () => ({
@@ -62,6 +63,7 @@ const seen = (
     return opens(log.opened);
   });
   on("prompt.fill", (_: any, e: any) => {
+    if (log.refuse) return { isFilled: false };
     log.filled.push(`${e.mode}:${e.text}`);
     log.box = e.mode === "replace" ? e.text : `${log.box}${e.text}`;
     return { isFilled: true };
@@ -399,4 +401,15 @@ test("the pane shows the held text, cut to fit, on every surface", async ($, on)
   }
   await end($);
   expect(await shown()).toEqual(Array(4).fill(undefined));
+});
+
+test("a box that can't be emptied keeps the text where it is", async ($, on) => {
+  const clock = mock.clock(on);
+  const log = seen(on);
+  log.refuse = true;
+  await submit($, "hi /files", {}, log);
+  await clock.advance(500);
+  expect(log.box).toBe("hi /files");
+  await end($);
+  expect(log.box).toBe("hi /files");
 });
