@@ -87,13 +87,18 @@ To update later: `claude plugin update file-picker@claude-files`.
   `src/auth/session.ts`, then ask "why does this log users out after an hour?"
   The prompt gets `@src/auth/session.ts` instead of a description of where the
   code lives.
-- **Halfway through a sentence.** Type `why does this log users out /files`
-  and press Enter: the pane opens, the text goes back in the prompt, and
-  Claude gets nothing until you pick the file and press Enter again. Press
-  `ctrl+x` then `Tab` to move into the pane: Claude Code gives the keys
-  back to the prompt box after a hook holds a prompt back. (Claude
-  Code runs `/files` only at the start of a prompt; at the end the plugin
-  catches it.)
+- **Halfway through a sentence.** Type `why does this log users out /files`:
+  the pane opens as soon as `/files` is typed, with the keyboard, so you can
+  filter straight away. The pane shows your text on a dim `Your text:` line
+  while it waits; press Enter on `session.ts` and the prompt reads
+  `why does this log users out @src/auth/session.ts `, or press Esc and your
+  text comes back as it was. Pressing Enter on such a prompt (or
+  `/files bug`, `/files idea` at the end) does the same, and Claude gets
+  nothing. (Claude Code runs `/files` only at the start of a prompt; at the
+  end the plugin catches it. Claude Code gives a pane the keyboard only over
+  an empty prompt box, so the text waits in the plugin's memory meanwhile.
+  A word that starts with `/files`, like `/filesystem`, typed after text
+  opens the pane too.)
 - **Hand over exact lines.** Press `l` on a long file, press Enter on line 120
   and again on line 145, then ask "simplify this loop". The prompt gets
   `@src/report.py#L120-145`, so Claude reads those 26 lines rather than the
@@ -286,10 +291,16 @@ the working directory, within the limits above, and never opens a file), reads
 a file **only when you press `l` on it, or the next file you press after
 arming `lines`** (to draw its lines in the pane) **or,
 with the preview on, when the arrows rest on it** (to draw its first lines under
-the list), and inserts text into your prompt. When you press Enter on a prompt,
-it checks only whether the prompt ends in `/files` (or `/files bug`, `/files
-idea`); if so it keeps the prompt from Claude and puts the text before it back
-in the box. It never stores, logs, shows or sends your prompt. The preview is off until you press
+the list), and inserts text into your prompt. As you type, it watches the
+ending of the prompt box, and when you press Enter, the ending of the prompt:
+only for ` /files` (or ` /files bug`, ` /files idea` on Enter). When it finds
+one, it keeps the prompt from Claude and holds the text typed before
+`/files` in memory while the pane is open, showing it in the pane, then puts
+it back in the box in front of whatever is there (on a pick, when the pane
+closes, or when the session ends). It never stores, logs or sends that text,
+or shows it anywhere but the pane. If the plugin reloads while it holds the
+text, the text is lost: Claude Code closes the pane without telling the
+plugin. The preview is off until you press
 `p`; it reads only files up to 64 KiB, and never reads a secrets file (below,
 even one you said yes to) or a link that leads out of the project. What it shows
 stays on your screen: nothing it reads goes into the prompt. What it
@@ -404,18 +415,21 @@ describes; for anything else, press `t` in the pane or open an issue.
 
 ## What the hooks do
 
-The plugin is one mod (`hooks/register.tsx`) with seven hooks. None of them
-changes what Claude or its tools do; they add the pane, and one holds back a
-prompt that ends in `/files` so it opens the pane instead.
+The plugin is one mod (`hooks/register.tsx`) with ten hooks. None of them
+changes what Claude or its tools do; they add the pane, and two catch
+`/files` typed at the end of the prompt so it opens the pane instead.
 
 | Hook | What it does |
 |---|---|
 | `session.start` | registers the `/files` command |
 | `command.run` (`/files` only) | opens the Files pane with an empty filter, or on the Feedback screen for `/files bug` and `/files idea`. It is matched to the `/files` command, so it never sees or changes any other command |
-| `prompt.submit` | when you press Enter on a prompt that ends in ` /files` (or ` /files bug`, ` /files idea`), opens the pane as `/files` does, keeps the prompt from Claude and, once Claude Code has put the text back in the prompt box, cuts the `/files` ending. It checks only that ending and never stores, logs, shows or sends the prompt. Every other prompt, a prompt with images attached, and any prompt not typed by you at the prompt (a plugin's, a peer session's, a notification, the SDK's, Remote Control's) goes through unchanged, as does one that hits an error before the pane opens |
-| `ui.render` (the Files pane) | draws the folder list, the project search, the recent files, the git changes list, the line view (with any kept ranges), the secrets confirmation or the Feedback screen (two links to GitHub issue forms), with the elements the surface has (no text fields on mobile) |
+| `prompt.edit` | when an edit you make (a key or a paste) leaves the prompt box ending in ` /files` after text, with the cursor at the end, empties the box, holds the text before `/files` in memory and opens the pane with the keyboard. It looks only at that ending; every other edit, and `/files` alone at the start of the box, goes through as typed |
+| `prompt.submit` | when you press Enter on a prompt that ends in ` /files` (or ` /files bug`, ` /files idea`), opens the pane as `/files` does and keeps the prompt from Claude; once Claude Code has put the text back in the box, holds the text before `/files` and asks for the pane again over the emptied box, so it gets the keyboard. Every other prompt, a prompt with images attached, and any prompt not typed by you at the prompt (a plugin's, a peer session's, a notification, the SDK's, Remote Control's) goes through unchanged, as does one that hits an error before the pane opens |
+| `ui.render` (the Files pane, two hooks) | one draws the folder list, the project search, the recent files, the git changes list, the line view (with any kept ranges), the secrets confirmation or the Feedback screen (two links to GitHub issue forms), with the elements the surface has (no text fields on mobile); the other, while text is held, adds a dim `Your text:` line above it, cut to the pane's width |
 | `ui.focus` (the Files pane) | remembers the highlighted row for `l`, `m` and the preview, and when the arrows reach a `↑/↓ N more` row, slides the list one row (a click or tap that presses the row pages from where the list was before that slide). With the preview on, it starts a short timer whose end reads the highlighted file |
-| `session.detach`, `ui.close` (the Files pane) | forget which surfaces draw the pane, when a client leaves or the pane closes |
+| `session.detach`, `ui.close` (the Files pane), `session.end` | forget which surfaces draw the pane, when a client leaves or the pane closes, and put any held text back in front of what the prompt box holds when the pane closes, the last surface drawing it leaves, or the session ends |
+
+The held text never goes to `$.store`, a log, a toast or a feedback link.
 
 Engine calls it makes: `$.command.register` (the `/files` command),
 `$.fs.list` and `$.fs.stat` (folder listings and file types; project search is `$.fs.list` alone, one folder per call; `r` checks each recent file still exists with `$.fs.stat`; `g` also stats `.git` in the working directory and each folder above it to find the repository root, then stats the git folder `git rev-parse` names), `$.fs.exists` (`g` checking that folder for `info/attributes`),
@@ -423,7 +437,7 @@ Engine calls it makes: `$.command.register` (the `/files` command),
 `$.fs.read` (the file you press `l` on, or the next file you press after arming `lines`, up to 4 MiB, and with the preview on,
 the highlighted file, up to 64 KiB), `$.clock.after` (waits 120 ms for the
 arrows to rest before the preview reads),
-`$.prompt.fill` (insert the mention, or put back the text typed before `/files`), `$.session.cwd`, `$.session.version`
+`$.prompt.fill` (insert the mention, empty the box, or put back the text typed before `/files`), `$.prompt.read` (what the box holds before that text goes back), `$.clock.sleep` (short waits for the box to settle after `/files`), `$.session.cwd`, `$.session.version`
 (the Claude Code version the bug link fills in), `$.ui.*` (pane, focus,
 toasts), `$.store` (the recent files, kept between sessions: read when
 you press `r` or add a file, written when you add a file or one has gone) and `$.state` (the pane's own session state: folder, filter, scroll
