@@ -1805,6 +1805,28 @@ export const register: Register = (on) => {
     return result;
   }).catch((_$, e, next) => next(e));
 
+  // While text is held out of the box (heldDraft), the pane shows it on a dim
+  // line above the rest, which draws a row shorter for it.
+  on(
+    "ui.render",
+    { component: "Pane", requestId: PANE },
+    async ($, e, next) => {
+      if (heldDraft === "") return next(e);
+      const { rows, columns } = paneSize(e.props);
+      const scroll = { ...e.props.scroll, bodyRows: Math.max(1, rows - 1) };
+      const drawing = await next({ ...e, props: { ...e.props, scroll } });
+      const ui = $.ui.resolve(e);
+      const { Box, Text } = ui;
+      const flat = heldDraft.replace(/\s+/g, " ");
+      return (
+        <Box flexDirection="column">
+          <Text dimColor>{fitCells(`Your text: ${flat}`, columns)}</Text>
+          {drawing}
+        </Box>
+      );
+    },
+  );
+
   on("ui.render", { component: "Pane", requestId: PANE }, async ($, e) => {
     const ui = $.ui.resolve(e);
     const { rows: bodyRows, columns: bodyColumns } = paneSize(e.props);
