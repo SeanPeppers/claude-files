@@ -1710,6 +1710,14 @@ async function openWithKeys($: EngineInterface, draft: string, args: string) {
   await openPicker($, args).catch(() => releaseDraft($));
 }
 
+// The prompt.edit answer empties the box once the hook resolves; the open
+// waits for that, as a pane asked for over text gets no keys.
+async function openAfterEdit($: EngineInterface, draft: string) {
+  holdDraft($, draft);
+  await $.clock.sleep(30);
+  await openPicker($, "").catch(() => releaseDraft($));
+}
+
 // Claude Code puts a dropped prompt back in the box, after whatever the box
 // held, which takes the keys from the pane. Once it is back, all of it but the
 // `/files` ending is held and the pane asked for again. The waits allow for a
@@ -1755,6 +1763,19 @@ export const register: Register = (on) => {
     await openPicker($, e.args ?? "");
     return { text: "File picker opened." };
   });
+
+  // Typing or pasting `/files` at the end of the box, after text, opens the
+  // pane at once: the box is emptied and the text before it held. Only the
+  // ending is looked at, and only with the cursor there; `/files` alone at the
+  // start stays the command.
+  on("prompt.edit", async ($, e, next) => {
+    const edited = await next(e);
+    const atEnd = e.inputText !== "" && edited.cursor === edited.text.length;
+    const asked = atEnd ? filesAtEnd(edited.text) : undefined;
+    if (asked?.args !== "") return edited;
+    void openAfterEdit($, asked.draft).catch(() => undefined);
+    return { text: "", cursor: 0 };
+  }).catch((_$, e, next) => next(e));
 
   // Claude Code runs a command only at the start of a prompt, so `/files`
   // typed after text would send the text to Claude. Instead the pane opens
