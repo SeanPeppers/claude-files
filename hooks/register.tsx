@@ -1666,6 +1666,35 @@ async function openPicker($: EngineInterface, args: string) {
   });
 }
 
+// Claude Code puts a dropped prompt back in the box, after whatever the box
+// holds, and gives the keys back to the box, so a pane can't keep them; the
+// drop says how to move into it. Once the text is back, its `/files` ending
+// is cut. The waits allow for a slow put-back; text never put back is put
+// back here, and text typed meanwhile is left alone.
+const SETTLE_WAITS_MS = [50, 100, 250];
+
+async function settleAfterDrop(
+  $: EngineInterface,
+  typed: string,
+  draft: string,
+) {
+  const sent = typed.trim();
+  for (const wait of SETTLE_WAITS_MS) {
+    await $.clock.sleep(wait);
+    const box = await $.prompt.read();
+    const kept = box.text.trimEnd();
+    if (kept.endsWith(sent)) {
+      // Only text that was in the box before stays in front, not the blanks
+      // the prompt started with.
+      const before = kept.slice(0, kept.length - sent.length).trimStart();
+      await $.prompt.fill({ text: `${before}${draft} `, mode: "replace" });
+      return;
+    }
+    if (kept !== "") return;
+  }
+  await $.prompt.fill({ text: `${draft} `, mode: "replace" });
+}
+
 export const register: Register = (on) => {
   on("session.start", async ($, e, next) => {
     await $.command.register({
@@ -1694,12 +1723,10 @@ export const register: Register = (on) => {
     const asked = filesAtEnd(e.text);
     if (!asked || e.origin.kind !== "composer" || e.attachments) return next(e);
     await openPicker($, asked.args);
-    const refilled = await $.prompt
-      .fill({ text: `${asked.draft} `, mode: "replace" })
-      .catch(() => ({ isFilled: false }));
-    // A box that won't take the draft back would lose it: send it as typed.
-    if (!refilled.isFilled) return next(e);
-    return { drop: "Opened the file picker; your text is back in the prompt." };
+    void settleAfterDrop($, e.text, asked.draft).catch(() => undefined);
+    return {
+      drop: "Files open: ctrl+x then Tab moves into the pane. Your text stays in the prompt.",
+    };
   }).catch((_$, e, next) => next(e));
 
   // A surface that stops drawing the pane stops steering it: a client that
