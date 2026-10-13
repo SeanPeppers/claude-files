@@ -66,6 +66,10 @@ const seen = (
     log.box = e.mode === "replace" ? e.text : `${log.box}${e.text}`;
     return { isFilled: true };
   });
+  on("prompt.edit", (_: any, e: any) => {
+    const text = `${e.text.slice(0, e.start)}${e.inputText}${e.text.slice(e.end)}`;
+    return { text, cursor: e.start + e.inputText.length };
+  });
   on("prompt.submit", (_: any, e: any) => {
     log.passed.push(e.text);
     return { text: e.text };
@@ -307,4 +311,67 @@ test("the last surface drawing the pane leaving puts the held text back", async 
   });
   await clock.advance(10);
   expect(log.box).toBe("explain this ");
+});
+
+// A keystroke or paste into the box, as the editor reports it.
+const edit = (
+  $: any,
+  text: string,
+  start: number,
+  inputText: string,
+  end = start,
+) =>
+  $.prompt.edit({
+    origin: { kind: "person" },
+    text,
+    cursor: start,
+    start,
+    end,
+    inputText,
+  });
+
+test("typing /files after text empties the box and opens the pane with the text held", async ($, on) => {
+  const clock = mock.clock(on);
+  const log = seen(on);
+  expect(await edit($, "hi /file", 8, "s")).toEqual({ text: "", cursor: 0 });
+  expect(log.opened).toBe(0);
+  await clock.advance(30);
+  expect(log.opened).toBe(1);
+  expect(log.filled).toEqual([]);
+  const ui = await mount($);
+  await ui.press({ key: "row:a.ts" });
+  expect(log.box).toBe("hi @a.ts ");
+  await ui.unmount();
+});
+
+test("text typed meanwhile stays when the held text goes back", async ($, on) => {
+  const clock = mock.clock(on);
+  const log = seen(on);
+  await edit($, "", 0, "hi /files");
+  await clock.advance(30);
+  log.box = "more";
+  await end($);
+  expect(log.box).toBe("hi more");
+});
+
+test("edits that don't end the box in /files at the cursor are left alone", async ($, on) => {
+  const clock = mock.clock(on);
+  const log = seen(on);
+  const left = [
+    await edit($, "/file", 5, "s"),
+    await edit($, "hi /files", 0, "a"),
+    await edit($, "hi /filesx", 9, "", 10),
+    await edit($, "hi /files bu", 12, "g"),
+    await edit($, "hi /filesyste", 13, "m"),
+  ];
+  expect(left.map((box: any) => box.text)).toEqual([
+    "/files",
+    "ahi /files",
+    "hi /files",
+    "hi /files bug",
+    "hi /filesystem",
+  ]);
+  await clock.advance(100);
+  expect(log.opened).toBe(0);
+  expect(log.filled).toEqual([]);
 });
