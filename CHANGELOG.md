@@ -93,15 +93,23 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `/files` typed after text (`explain this /files`) sent the whole prompt to
   Claude, since Claude Code runs a command only at the start of a prompt.
-  A new `prompt.submit` hook now catches a prompt you typed that ends in
-  `/files` (or `/files bug`, `/files idea`): it opens the pane as `/files`
-  does and holds the prompt back, so Claude gets nothing. Claude Code puts
-  the text back in the prompt box and the plugin cuts the `/files` ending;
-  `ctrl+x` then `Tab` moves into the pane. It checks only that ending and
-  never stores, logs, shows or sends the prompt. Other prompts, prompts with
-  images, prompts from plugins, peers, notifications, the SDK or Remote
-  Control, and any prompt that hits an error before the pane opens go
-  through unchanged. The README's hooks table now lists all seven hooks.
+  Two new hooks catch it. `prompt.edit` opens the pane as soon as an edit
+  leaves the prompt box ending in ` /files` after text, with the cursor at
+  the end; `prompt.submit` catches Enter on a prompt that ends in `/files`
+  (or `/files bug`, `/files idea`) and holds the prompt back, so Claude gets
+  nothing. Either way the pane opens with the keyboard, so typing filters
+  straight away. Claude Code gives a pane the keys only over an empty prompt
+  box, so the text before `/files` waits in the plugin's memory, shown on a
+  dim `Your text:` line in the pane, and goes back in front of whatever the
+  box holds on a pick (`explain this @a.ts `), when the pane closes (Esc),
+  when the last surface drawing it leaves or when the session ends. It is
+  never stored, logged, toasted or put in a feedback link. A plugin reload
+  while the pane holds text loses that text, and a word that starts with
+  `/files` (`/filesystem`) typed after text opens the pane too. Other
+  prompts, prompts with images, prompts from plugins, peers, notifications,
+  the SDK or Remote Control, and any prompt that hits an error before the
+  pane opens go through unchanged. The README's hooks table now lists all
+  ten hooks.
 - Back from the line view (`f`), `m` and `l` work on the file the ring is on
   again instead of asking you to arrow onto a file first.
 - In a pane under 39 columns the line view's footer (`files`, `whole file`,
