@@ -86,6 +86,8 @@ const KEEP_ARMED_LABEL = "keep: pick its last line";
 const DIR_STATE = { plugin: "file-picker", key: "dir" } as const;
 const PREVDIR_STATE = { plugin: "file-picker", key: "prevDir" } as const;
 const SHOWHIDDEN_STATE = { plugin: "file-picker", key: "showHidden" } as const;
+// Whether folders list newest first instead of by name.
+const BYMODIFIED_STATE = { plugin: "file-picker", key: "byModified" } as const;
 const QUERY_STATE = { plugin: "file-picker", key: "query" } as const;
 const OFFSET_STATE = { plugin: "file-picker", key: "offset" } as const;
 // The file shown line by line, or '' for the folder list.
@@ -225,6 +227,7 @@ const INITIAL: State = {
   dir: "",
   prevDir: "",
   showHidden: false,
+  byModified: false,
   query: "",
   offset: 0,
   preview: "",
@@ -272,6 +275,13 @@ async function heldState<K extends keyof State>(
       const held = await $.state.get(SHOWHIDDEN_STATE);
       return {
         value: (held.value ?? INITIAL.showHidden) as State[K],
+        version: held.version,
+      };
+    }
+    case "byModified": {
+      const held = await $.state.get(BYMODIFIED_STATE);
+      return {
+        value: (held.value ?? INITIAL.byModified) as State[K],
         version: held.version,
       };
     }
@@ -436,6 +446,13 @@ async function writeState<K extends keyof State>(
     case "showHidden": {
       const next = value as State["showHidden"];
       const done = await $.state.set(SHOWHIDDEN_STATE, next, {
+        ifVersion: version,
+      });
+      return done.isSet;
+    }
+    case "byModified": {
+      const next = value as State["byModified"];
+      const done = await $.state.set(BYMODIFIED_STATE, next, {
         ifVersion: version,
       });
       return done.isSet;
@@ -793,7 +810,12 @@ async function rankedIn($: EngineInterface, dir: string, query: string) {
   const listed = await listDir($, dir).catch((): Entry[] => []);
   return isPathQuery(query)
     ? []
-    : rankEntries(listed, query, await readState($, "showHidden"));
+    : rankEntries(
+        listed,
+        query,
+        await readState($, "showHidden"),
+        await readState($, "byModified"),
+      );
 }
 
 // Where a picked path really leads, following links in any folder on the way,
@@ -931,6 +953,9 @@ async function placeOf(
 // its button under a key the screen doesn't hold yet.
 const peekKey = (shown: boolean) => (shown ? "hide-peek" : "peek");
 const hiddenKey = (shown: boolean) => (shown ? "hide-hidden" : "hidden");
+const sortKey = (newest: boolean) => (newest ? "sort-name" : "sort-modified");
+const sortLabelOf = (newest: boolean) =>
+  newest ? "sort: modified" : "sort: name";
 
 // Puts the ring on `target` from ringAfterToggle ("" leaves it). Left on a
 // place the redraw moved, it would sit on another row or button while l, m
@@ -966,6 +991,18 @@ async function toggleHidden($: EngineInterface, surface: string) {
     view,
   );
   await ringToToggle($, ringAfterToggle(key, before, after, hiddenKey(shown)));
+}
+
+// `o`: the folder list by name or newest first. Search, recent and git keep
+// their own order. The button sits in the header, so the rows stay put.
+async function toggleSort($: EngineInterface, surface: string) {
+  const key = focusedKey;
+  const view = viewOf(surface);
+  const before = await placeOf($, key, view.listRows, view);
+  await updateState($, "byModified", (v) => !v);
+  const newest = await readState($, "byModified");
+  const after = await placeOf($, key, view.listRows, view);
+  await ringToToggle($, ringAfterToggle(key, before, after, sortKey(newest)));
 }
 // The slide a "more" row's focus started, and the window it started from. A
 // click or tap raises that focus just before the press, so the press pages
@@ -2199,6 +2236,7 @@ export const register: Register = (on) => {
     }
 
     const showHidden = await readState($, "showHidden");
+    const byModified = await readState($, "byModified");
     // A filter typed on another surface can't be cleared where there is no box.
     const query = Input ? await readState($, "query") : "";
     view.box = Input !== undefined;
@@ -2567,7 +2605,9 @@ export const register: Register = (on) => {
     ]);
     view.listRows = listRows;
     const pathMode = isPathQuery(query);
-    const ranked = pathMode ? [] : rankEntries(listed, query, showHidden);
+    const ranked = pathMode
+      ? []
+      : rankEntries(listed, query, showHidden, byModified);
     // Counted by the rule the ranking uses: hidden entries count only when
     // they can show, as a query starting with `.` lets them.
     const shownCount = listed.filter((entry) =>
@@ -2626,6 +2666,15 @@ export const register: Register = (on) => {
               {relative(dir)}
             </Text>
             <Box gap={2}>
+              <Button
+                key={sortKey(byModified)}
+                plain
+                hotkey="o"
+                dimColor
+                onPress={() => toggleSort($, e.surface)}
+              >
+                {sortLabelOf(byModified)}
+              </Button>
               <Text dimColor>
                 {query ? `${ranked.length}/${shownCount}` : `${shownCount}`}
               </Text>
@@ -2796,7 +2845,7 @@ export const register: Register = (on) => {
         {showHint && (
           <Text dimColor wrap="truncate-end">
             ↑↓ move · Enter add/open · l lines · m mark · s search · r recent ·
-            Esc close
+            o sort · Esc close
           </Text>
         )}
       </Box>

@@ -80,6 +80,14 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Tests that draw and use the pane on all four surfaces (terminal, desktop,
   VS Code, mobile), including short and narrow panes and a Windows working
   directory.
+- Sort by modified: `o` in a folder switches its list between name order
+  (the default) and newest first, by each entry's modified time from the
+  listing it already reads. Folders still come before files, equal times
+  fall back to name order, and a filter still ranks by match first. The
+  button sits in the header row (`sort: name` / `sort: modified`), so it
+  costs the list no row. The order holds across folders until the session
+  ends and is not stored; search, recent files and git's changes keep their
+  own order.
 
 ### Fixed
 

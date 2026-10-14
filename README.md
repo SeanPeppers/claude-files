@@ -126,6 +126,7 @@ To update later: `claude plugin update file-picker@claude-files`.
 | `Enter` in the filter | open the best match, or jump to a typed path (`../notes`, `/etc`, `D:\data`) |
 | `u` `b` `c` | up a folder, back to the last folder, back to the working directory |
 | `h` | show or hide hidden files: names starting with `.`, like `.env`, `.github` or `.gitignore` |
+| `o` | sort the folder by name or by modified time, newest first; folders stay on top. The header shows which (`sort: name`), and the choice holds across folders until the session ends |
 | `a` | put the current folder in the prompt |
 | `m` on a file | mark or unmark it (`✓`); marks stay as you move between folders and when you close and reopen `/files`. Folders can't be marked (use `a`) |
 | `i` | insert every marked file at once (`@src/a.ts @"my notes.md" @docs/b.md`) and clear the marks |
